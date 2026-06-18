@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+jspm_packages/
+
+# next.js
+.next/
+out/
+
+# production
+build/
+
+# misc
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# python (for backend)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.venv
+.env
+.tox
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
+.pytest_cache/
