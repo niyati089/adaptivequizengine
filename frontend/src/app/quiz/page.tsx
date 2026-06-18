@@ -2,13 +2,47 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { Lightbulb, ChevronRight, Clock, BarChart2, CheckCircle, XCircle, ChevronDown } from 'lucide-react';
 import { generateQuestion, submitAnswer } from '@/services/quizService';
 
 export default function QuizPage() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading) {
+      if (!user) {
+        router.push('/login');
+      } else if (user.role !== 'student') {
+        router.push('/unauthorized');
+      }
+    }
+  }, [user, isLoading, router]);
+
+  if (isLoading || !user || user.role !== 'student') {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '2.5rem', height: '2.5rem',
+            border: '3px solid #EDE9FE',
+            borderTopColor: '#7C3AED',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 1rem',
+          }} />
+          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Loading Portal...</p>
+        </div>
+      </div>
+    );
+  }
+
   const [qIndex, setQIndex] = useState(0);
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
+
   const [showHint, setShowHint] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
   const [timer, setTimer] = useState(60);

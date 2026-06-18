@@ -1,5 +1,9 @@
-﻿import React from 'react';
+"use client";
+
+import React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 import { CheckCircle, ArrowRight, BarChart2, BookOpen, ChevronRight } from 'lucide-react';
 
 const topicResults = [
@@ -15,6 +19,37 @@ const nextTopics = [
 ];
 
 export default function ResultsPage() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+
+  React.useEffect(() => {
+    if (!isLoading) {
+      if (!user) {
+        router.push('/login');
+      } else if (user.role !== 'student') {
+        router.push('/unauthorized');
+      }
+    }
+  }, [user, isLoading, router]);
+
+  if (isLoading || !user || user.role !== 'student') {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '2.5rem', height: '2.5rem',
+            border: '3px solid #EDE9FE',
+            borderTopColor: '#7C3AED',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 1rem',
+          }} />
+          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Loading Portal...</p>
+        </div>
+      </div>
+    );
+  }
+
   const scorePercent = 75;
   const correct = 6;
   const total = 8;
