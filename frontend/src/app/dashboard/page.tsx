@@ -2,8 +2,6 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
 import { AreaChart, Area, LineChart, Line, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Brain, Target, BookOpen, ChevronRight, AlertTriangle } from 'lucide-react';
 
@@ -37,7 +35,7 @@ const weakInsights = [
 ];
 
 const statusColor = (s: string) => s === 'good' ? '#059669' : s === 'medium' ? '#D97706' : '#DC2626';
-const statusBg   = (s: string) => s === 'good' ? '#ECFDF5' : s === 'medium' ? '#FEF3C7' : '#FEF2F2';
+const statusBg = (s: string) => s === 'good' ? '#ECFDF5' : s === 'medium' ? '#FEF3C7' : '#FEF2F2';
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload?.length) {
@@ -52,37 +50,6 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function DashboardPage() {
-  const { user, isLoading } = useAuth();
-  const router = useRouter();
-
-  React.useEffect(() => {
-    if (!isLoading) {
-      if (!user) {
-        router.push('/login');
-      } else if (user.role !== 'student') {
-        router.push('/unauthorized');
-      }
-    }
-  }, [user, isLoading, router]);
-
-  if (isLoading || !user || user.role !== 'student') {
-    return (
-      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '2.5rem', height: '2.5rem',
-            border: '3px solid #EDE9FE',
-            borderTopColor: '#7C3AED',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem',
-          }} />
-          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Loading Portal...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: '#F9FAFB', fontFamily: "'Inter', sans-serif", padding: '2rem 1.5rem' }}>
       <div style={{ maxWidth: '72rem', margin: '0 auto' }}>
@@ -91,9 +58,8 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 900, color: '#111827', letterSpacing: '-0.03em', marginBottom: '0.25rem' }}>
-              Welcome back, {user.name}!
+              My Dashboard
             </h1>
-
             <p style={{ fontSize: '0.9375rem', color: '#6B7280' }}>Track your adaptive learning progress across all topics.</p>
           </div>
           <Link href="/quiz" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>

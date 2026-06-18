@@ -1,15 +1,11 @@
-from pydantic_settings import BaseSettings
+import os
+from dotenv import load_dotenv
 
-class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./quiz.db"
-    REDIS_URL: str = "redis://localhost:6379/0"
-    OPENAI_API_KEY: str = ""
-    SECRET_KEY: str = "supersecretkeyforlocaldev1234567890"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+# Load environment variables from .env file
+load_dotenv()
 
-    class Config:
-        env_file = ".env"
+class Config:
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
-settings = Settings()
-
+config = Config()

@@ -2,8 +2,6 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Users, BookOpen, AlertTriangle, TrendingUp, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -31,37 +29,6 @@ const misconceptions = [
 const barColor = (score: number) => score >= 70 ? '#059669' : score >= 50 ? '#D97706' : '#EF4444';
 
 export default function EducatorPage() {
-  const { user, isLoading } = useAuth();
-  const router = useRouter();
-
-  React.useEffect(() => {
-    if (!isLoading) {
-      if (!user) {
-        router.push('/login');
-      } else if (user.role !== 'teacher') {
-        router.push('/unauthorized');
-      }
-    }
-  }, [user, isLoading, router]);
-
-  if (isLoading || !user || user.role !== 'teacher') {
-    return (
-      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '2.5rem', height: '2.5rem',
-            border: '3px solid #EDE9FE',
-            borderTopColor: '#7C3AED',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem',
-          }} />
-          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Loading Portal...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: '#F9FAFB', fontFamily: "'Inter', sans-serif", padding: '2rem 1.5rem' }}>
       <div style={{ maxWidth: '76rem', margin: '0 auto' }}>
@@ -202,9 +169,11 @@ export default function EducatorPage() {
                     </td>
                     <td style={{ fontWeight: 700, color: parseFloat(s.theta) >= 0 ? '#7C3AED' : '#EF4444' }}>{s.theta}</td>
                     <td>
-                      <span style={{ fontSize: '0.8125rem', fontWeight: 600, padding: '0.2rem 0.625rem', borderRadius: '9999px',
+                      <span style={{
+                        fontSize: '0.8125rem', fontWeight: 600, padding: '0.2rem 0.625rem', borderRadius: '9999px',
                         background: s.velocity === 'Fast' ? '#ECFDF5' : s.velocity === 'Medium' ? '#FEF3C7' : '#FEE2E2',
-                        color: s.velocity === 'Fast' ? '#059669' : s.velocity === 'Medium' ? '#D97706' : '#DC2626' }}>
+                        color: s.velocity === 'Fast' ? '#059669' : s.velocity === 'Medium' ? '#D97706' : '#DC2626'
+                      }}>
                         {s.velocity}
                       </span>
                     </td>
