@@ -15,3 +15,7 @@ pytest
 python-dotenv
 httpx
 pytest-asyncio
+python-jose[cryptography]
+bcrypt==3.2.2
+passlib[bcrypt]
+groq

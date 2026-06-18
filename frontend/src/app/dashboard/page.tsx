@@ -62,7 +62,7 @@ export default function DashboardPage() {
             </h1>
             <p style={{ fontSize: '0.9375rem', color: '#6B7280' }}>Track your adaptive learning progress across all topics.</p>
           </div>
-          <Link href="/quiz" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Link href="/quiz?topic=Mathematics" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
             Start Today's Quiz <ChevronRight size={16} />
           </Link>
         </div>

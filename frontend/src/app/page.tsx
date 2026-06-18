@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { BookOpen, Zap, Target, TrendingUp, Brain, Clock, Award, ChevronRight, Star } from 'lucide-react';
 
@@ -167,7 +167,7 @@ export default function Home() {
           <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', marginBottom: '1rem' }}>Categories</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.625rem' }}>
             {topics.map(topic => (
-              <Link key={topic} href="/quiz" style={{
+              <Link key={topic} href={`/quiz?topic=${encodeURIComponent(topic)}`} style={{
                 textDecoration: 'none', padding: '0.5rem 1rem',
                 background: 'white', border: '1.5px solid #E5E7EB',
                 borderRadius: '9999px', fontSize: '0.875rem', fontWeight: 500, color: '#374151',

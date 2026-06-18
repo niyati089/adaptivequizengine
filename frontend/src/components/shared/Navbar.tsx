@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, Menu, X } from 'lucide-react';
+import { BookOpen, Menu, X, LogOut } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
 
 const navLinks = [
   { href: '/', label: 'Home' },
@@ -16,6 +17,7 @@ const navLinks = [
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { user, logout } = useAuth();
 
   return (
     <header style={{
@@ -58,9 +60,83 @@ export const Navbar: React.FC = () => {
 
         {/* CTA */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Link href="/quiz" className="btn-primary" style={{ fontSize: '0.875rem', padding: '0.5rem 1.25rem', borderRadius: '8px' }}>
-            Start Learning
-          </Link>
+          {user ? (
+            <>
+              {/* Profile Info Desktop */}
+              <div className="hidden md:flex" style={{ alignItems: 'center', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <div style={{
+                    width: '2rem', height: '2rem', borderRadius: '50%',
+                    background: '#F3F4F6', color: '#7C3AED',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 700, fontSize: '0.875rem'
+                  }}>
+                    {user.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', lineHeight: 1 }}>
+                      {user.name}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: '#6B7280', textTransform: 'capitalize' }}>
+                      {user.role}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Logout Action */}
+                <button
+                  onClick={logout}
+                  style={{
+                    background: 'none', border: '1px solid #E5E7EB',
+                    borderRadius: '8px', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    gap: '0.375rem', padding: '0.4rem 0.75rem',
+                    color: '#4B5563', fontSize: '0.8125rem', fontWeight: 600,
+                    transition: 'all 0.15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = '#EF4444';
+                    e.currentTarget.style.borderColor = '#FCA5A5';
+                    e.currentTarget.style.backgroundColor = '#FEF2F2';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = '#4B5563';
+                    e.currentTarget.style.borderColor = '#E5E7EB';
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  <LogOut size={14} />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Link
+                href="/login"
+                style={{
+                  fontSize: '0.875rem', fontWeight: 600,
+                  color: '#4B5563', textDecoration: 'none',
+                  padding: '0.5rem 1rem', borderRadius: '8px',
+                }}
+              >
+                Sign In
+              </Link>
+              <Link
+                href="/login"
+                style={{
+                  fontSize: '0.875rem', fontWeight: 700,
+                  color: 'white', textDecoration: 'none',
+                  background: 'linear-gradient(135deg, #7C3AED 0%, #6366F1 100%)',
+                  padding: '0.5rem 1.25rem', borderRadius: '8px',
+                  boxShadow: '0 4px 10px rgba(124, 58, 237, 0.15)',
+                }}
+              >
+                Get Started
+              </Link>
+            </div>
+          )}
+
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
             style={{ display: 'none', padding: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', color: '#374151' }}
@@ -91,6 +167,21 @@ export const Navbar: React.FC = () => {
               {link.label}
             </Link>
           ))}
+          {user && (
+            <button
+              onClick={() => { setMobileOpen(false); logout(); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                margin: '0.5rem 1rem 0', padding: '0.75rem 1rem',
+                border: 'none', background: 'none', width: 'calc(100% - 2rem)',
+                textAlign: 'left', cursor: 'pointer', fontSize: '0.9375rem',
+                fontWeight: 600, color: '#EF4444',
+              }}
+            >
+              <LogOut size={16} />
+              <span>Log out ({user.name})</span>
+            </button>
+          )}
         </div>
       )}
     </header>
