@@ -32,7 +32,7 @@ class ReviewService:
 
         # 2. Invoke scheduler
         new_params = self.scheduler.calculate_next_review(
-            rating=request.rating,
+            rating=request.quality,
             ease_factor=current_schedule.ease_factor,
             interval_days=current_schedule.interval_days,
             repetition_count=current_schedule.repetition_count

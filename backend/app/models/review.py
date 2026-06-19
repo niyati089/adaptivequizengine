@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, DateTime
+from sqlalchemy import Column, Integer, Float, DateTime, String
 from sqlalchemy.orm import declarative_base
 from datetime import datetime
 
@@ -10,7 +10,7 @@ class ReviewSchedule(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, index=True)
-    topic_id = Column(Integer, index=True)
+    topic_id = Column(String, index=True)
     mastery_score = Column(Float, default=0.0)
     ease_factor = Column(Float, default=2.5)
     interval_days = Column(Integer, default=0)

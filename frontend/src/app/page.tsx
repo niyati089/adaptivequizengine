@@ -1,6 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { BookOpen, Zap, Target, TrendingUp, Brain, Clock, Award, ChevronRight, Star } from 'lucide-react';
+import heroImage from '@/components/images/image1.png';
 
 const leaderboard = [
   { rank: 1, name: 'Aisha K.', score: 2840, avatar: 'AK' },
@@ -110,24 +112,13 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right: Leaderboard card */}
-          <div style={{ minWidth: '240px', maxWidth: '280px' }}>
-            <div style={{ background: 'white', borderRadius: '20px', padding: '1.25rem', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#111827' }}>User Ranking</span>
-                <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#7C3AED' }}>Score</span>
-              </div>
-              {leaderboard.map((user, i) => (
-                <div key={user.rank} style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', padding: '0.5rem 0', borderBottom: i < leaderboard.length - 1 ? '1px solid #F3F4F6' : 'none' }}>
-                  <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#9CA3AF', width: '1rem', textAlign: 'center' }}>{user.rank}</span>
-                  <div style={{ width: '1.75rem', height: '1.75rem', borderRadius: '50%', background: '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 800, color: '#7C3AED' }}>
-                    {user.avatar}
-                  </div>
-                  <span style={{ flex: 1, fontSize: '0.875rem', fontWeight: 500, color: '#374151' }}>{user.name}</span>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#7C3AED' }}>{user.score.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
+          {/* Right: Hero Image */}
+          <div style={{ maxWidth: '400px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            <Image 
+              src={heroImage} 
+              alt="Adaptive Learning" 
+              style={{ width: '100%', height: 'auto', borderRadius: '20px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} 
+            />
           </div>
         </div>
       </section>

@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import setupImage from '@/components/images/image2.png';
 import { Lightbulb, ChevronRight, Clock, BarChart2, CheckCircle, XCircle, ChevronDown, Loader2 } from 'lucide-react';
 import { generateQuestion, submitAnswer, getSocraticHint, getExplanation, scheduleReview, generateTopicDag } from '@/services/quizService';
 
@@ -228,7 +230,12 @@ export default function QuizPage() {
 
   if (quizState === 'setup') {
     return (
-      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC', padding: '2rem' }}>
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC', padding: '2rem', gap: '2rem' }}>
+        <Image 
+          src={setupImage} 
+          alt="Quiz Setup" 
+          style={{ maxWidth: '400px', width: '100%', height: 'auto' }} 
+        />
         <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', width: '100%', maxWidth: '440px' }}>
           <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem', color: '#111827' }}>Quiz Setup</h2>
           <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: '1.5rem' }}>Use AI to discover prerequisite knowledge graphs or jump straight in.</p>
