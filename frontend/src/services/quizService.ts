@@ -60,3 +60,8 @@ export const scheduleReview = async (params: ReviewRequest) => {
   const response = await api.post('/review/schedule', params);
   return response.data;
 };
+
+export const generateTopicDag = async (topic: string) => {
+  const response = await api.get(`/dag/generate?topic=${encodeURIComponent(topic)}`);
+  return response.data;
+};

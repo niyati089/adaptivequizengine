@@ -1,0 +1,64 @@
+
+> adaptive-tutor-frontend@0.1.0 build
+> next build
+
+   Γû▓ Next.js 14.1.3
+
+   Creating an optimized production build ...
+ Γ£ô Compiled successfully
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/11) ...
+ Γ¿» useSearchParams() should be wrapped in a suspense boundary at page "/quiz". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at i (C:\CapGemini AgentifAI\adaptivequizengine\frontend\.next\server\chunks\4.js:14:13312)
+    at h (C:\CapGemini AgentifAI\adaptivequizengine\frontend\.next\server\chunks\4.js:14:25065)
+    at z (C:\CapGemini AgentifAI\adaptivequizengine\frontend\.next\server\app\quiz\page.js:1:3963)
+    at nM (C:\CapGemini AgentifAI\adaptivequizengine\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:12:47419)
+    at nL (C:\CapGemini AgentifAI\adaptivequizengine\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:12:64674)
+    at nI (C:\CapGemini AgentifAI\adaptivequizengine\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:12:46806)
+    at nM (C:\CapGemini AgentifAI\adaptivequizengine\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:12:47570)
+    at nM (C:\CapGemini AgentifAI\adaptivequizengine\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:12:61663)
+    at nL (C:\CapGemini AgentifAI\adaptivequizengine\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:12:64674)
+    at nB (C:\CapGemini AgentifAI\adaptivequizengine\frontend\node_modules\next\dist\compiled\next-server\app-page.runtime.prod.js:12:67657)
+
+Error occurred prerendering page "/quiz". Read more: https://nextjs.org/docs/messages/prerender-error
+
+
+   Generating static pages (2/11) 
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+   Generating static pages (5/11) 
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+
+   Generating static pages (8/11) 
+
+ Γ£ô Generating static pages (11/11) 
+
+> Export encountered errors on following paths:
+	/quiz/page: /quiz

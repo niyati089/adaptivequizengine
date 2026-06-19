@@ -13,7 +13,7 @@ scipy
 networkx
 pytest
 python-dotenv
-httpx
+httpx<0.28.0
 pytest-asyncio
 python-jose[cryptography]
 bcrypt==3.2.2

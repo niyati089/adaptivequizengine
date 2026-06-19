@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Lightbulb, ChevronRight, Clock, BarChart2, CheckCircle, XCircle, ChevronDown, Loader2 } from 'lucide-react';
-import { generateQuestion, submitAnswer, getSocraticHint, getExplanation, scheduleReview } from '@/services/quizService';
+import { generateQuestion, submitAnswer, getSocraticHint, getExplanation, scheduleReview, generateTopicDag } from '@/services/quizService';
 
 export default function QuizPage() {
   const { user, isLoading } = useAuth();
@@ -24,7 +24,14 @@ export default function QuizPage() {
     }
   }, [user, isLoading, router]);
 
+
   // Quiz tracking
+  const [quizState, setQuizState] = useState<'setup' | 'playing'>('setup');
+  const [inputTopic, setInputTopic] = useState(selectedTopic || "");
+  const [dagData, setDagData] = useState<any>(null);
+  const [isLoadingDag, setIsLoadingDag] = useState(false);
+  const [selectedSubtopic, setSelectedSubtopic] = useState("");
+  
   const [qIndex, setQIndex] = useState(0);
   const [q, setQ] = useState<any>(null);
   const [theta, setTheta] = useState(0.0);
@@ -53,8 +60,8 @@ export default function QuizPage() {
     setIsGenLoading(true);
     try {
       const data = await generateQuestion({
-        topic: selectedTopic,
-        subtopic: "General",
+        topic: inputTopic,
+        subtopic: selectedSubtopic || "General",
         difficulty: currentTheta,
         bloom_level: bloomLevel,
         previous_questions: prevQuestions
@@ -64,7 +71,7 @@ export default function QuizPage() {
         options: [data.options.A, data.options.B, data.options.C, data.options.D],
         optKeys: ["A", "B", "C", "D"],
         correct: ["A", "B", "C", "D"].indexOf(data.correct_answer),
-        topic: "Algorithms",
+        topic: inputTopic,
         topicColor: '#7C3AED',
         difficulty: currentTheta,
         diffLabel: 'Adaptive',
@@ -81,11 +88,33 @@ export default function QuizPage() {
     }
   };
 
-  useEffect(() => {
-    if (user && user.role === 'student' && !q && isGenLoading) {
-      fetchNextQuestion(0.0);
+  const handleGenerateDag = async () => {
+    if (!inputTopic.trim()) return;
+    setIsLoadingDag(true);
+    try {
+      const data = await generateTopicDag(inputTopic);
+      let parsedSubtopics = data.subtopics;
+      if (!parsedSubtopics && data.dag && data.dag.nodes) {
+        parsedSubtopics = data.dag.nodes.map((n: any) => ({
+          title: n.label || n.id,
+          level: n.level
+        }));
+      }
+      setDagData({ ...data, subtopics: parsedSubtopics });
+      if (parsedSubtopics && parsedSubtopics.length > 0) {
+        setSelectedSubtopic(parsedSubtopics[0].title);
+      }
+    } catch (e) {
+      console.error("Failed to generate DAG:", e);
+    } finally {
+      setIsLoadingDag(false);
     }
-  }, [user]); // Run once when user is available
+  };
+
+  const startQuiz = () => {
+    setQuizState('playing');
+    fetchNextQuestion(0.0);
+  };
 
   useEffect(() => {
     if (submitted || !q) return;
@@ -137,8 +166,8 @@ export default function QuizPage() {
         difficulty: difficulty,
         selected_option: q.optKeys[selected],
         correct_answer: q.optKeys[q.correct],
-        topic: selectedTopic,
-        subtopic: "General",
+        topic: inputTopic,
+        subtopic: selectedSubtopic || "General",
         question: q.question
       });
       
@@ -186,21 +215,88 @@ export default function QuizPage() {
     fetchNextQuestion(theta, [q.question]); 
   };
 
-  if (isLoading || !user || user.role !== 'student' || isGenLoading || !q) {
+  if (isLoading || !user || user.role !== 'student') {
     return (
       <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '2.5rem', height: '2.5rem',
-            border: '3px solid #EDE9FE',
-            borderTopColor: '#7C3AED',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem',
-          }} />
-          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>
-             {isGenLoading ? 'Generating next adaptive question...' : 'Loading Portal...'}
-          </p>
+          <div style={{ width: '2.5rem', height: '2.5rem', border: '3px solid #EDE9FE', borderTopColor: '#7C3AED', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1rem' }} />
+          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Loading Portal...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (quizState === 'setup') {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC', padding: '2rem' }}>
+        <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', width: '100%', maxWidth: '440px' }}>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem', color: '#111827' }}>Quiz Setup</h2>
+          <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: '1.5rem' }}>Use AI to discover prerequisite knowledge graphs or jump straight in.</p>
+          
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>Topic</label>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input 
+                type="text" 
+                value={inputTopic} 
+                onChange={e => setInputTopic(e.target.value)}
+                style={{ flex: 1, padding: '0.75rem', borderRadius: '8px', border: '1px solid #D1D5DB', fontSize: '1rem', outline: 'none' }}
+                placeholder="e.g. Quantum Computing"
+              />
+              <button 
+                onClick={handleGenerateDag}
+                disabled={isLoadingDag || !inputTopic}
+                style={{ background: '#7C3AED', color: 'white', padding: '0 1rem', borderRadius: '8px', border: 'none', fontWeight: 600, cursor: isLoadingDag || !inputTopic ? 'not-allowed' : 'pointer', opacity: isLoadingDag || !inputTopic ? 0.7 : 1 }}
+              >
+                {isLoadingDag ? <Loader2 size={18} className="animate-spin" /> : 'Subtopics'}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '2rem' }}>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>Focus Subtopic</label>
+            {dagData && dagData.subtopics ? (
+              <div>
+                <select 
+                  value={selectedSubtopic} 
+                  onChange={e => setSelectedSubtopic(e.target.value)}
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #D1D5DB', fontSize: '1rem', background: 'white', outline: 'none' }}
+                >
+                  {dagData.subtopics.map((st: any) => (
+                    <option key={st.id || st.title} value={st.title}>{st.title} (Lvl {st.level})</option>
+                  ))}
+                </select>
+                <p style={{ fontSize: '0.75rem', color: '#6B7280', marginTop: '0.5rem' }}>Options are generated dynamically using a prerequisite Knowledge DAG.</p>
+              </div>
+            ) : (
+              <input 
+                type="text" 
+                value={selectedSubtopic} 
+                onChange={e => setSelectedSubtopic(e.target.value)}
+                style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #D1D5DB', fontSize: '1rem', outline: 'none' }}
+                placeholder="e.g. Arrays, Kinematics (Optional)"
+              />
+            )}
+          </div>
+
+          <button 
+            onClick={startQuiz}
+            disabled={!inputTopic || isLoadingDag}
+            style={{ width: '100%', background: '#10B981', color: 'white', padding: '0.875rem', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '1rem', cursor: !inputTopic || isLoadingDag ? 'not-allowed' : 'pointer', opacity: !inputTopic || isLoadingDag ? 0.5 : 1 }}
+          >
+            Start Quiz
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isGenLoading || !q) {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '2.5rem', height: '2.5rem', border: '3px solid #EDE9FE', borderTopColor: '#7C3AED', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1rem' }} />
+          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Generating next adaptive question...</p>
         </div>
       </div>
     );
