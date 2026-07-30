@@ -18,6 +18,7 @@ export interface AnswerRequest {
   topic: string;
   subtopic: string;
   question: string;
+  misconception?: string | null;
 }
 
 export const generateQuestion = async (params: QuestionRequest) => {
@@ -65,5 +66,15 @@ export const scheduleReview = async (params: ReviewRequest) => {
 
 export const generateTopicDag = async (topic: string) => {
   const response = await api.get(`/dag/generate?topic=${encodeURIComponent(topic)}`);
+  return response.data;
+};
+
+export const getEducatorDashboard = async (topic: string) => {
+  const response = await api.get(`/educators/dashboard?topic=${encodeURIComponent(topic)}`);
+  return response.data;
+};
+
+export const getReTeachingRecommendations = async (topic: string) => {
+  const response = await api.get(`/educators/re-teaching?topic=${encodeURIComponent(topic)}`);
   return response.data;
 };

@@ -3,8 +3,8 @@ def test_schedule_review(client):
         "/api/review/schedule",
         json={
             "user_id": 1,
-            "topic_id": 101,
-            "rating": 4
+            "topic_id": "101",
+            "quality": 4
         }
     )
     assert response.status_code == 200

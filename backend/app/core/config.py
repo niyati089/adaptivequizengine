@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     
     # Groq LLM
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")

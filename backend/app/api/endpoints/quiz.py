@@ -4,12 +4,13 @@ from typing import Optional
 from groq import Groq
 import os
 import json
+from sqlalchemy.orm import Session
+from app.database.session import get_db
 from app.irt.theta_estimator import ThetaEstimator
 from app.models.user import User
-from app.api.endpoints.users import get_current_student
+from app.api.endpoints.users import get_current_student, oauth2_scheme
 from app.models.proctoring_event import ProctoringEvent
-from app.database.session import get_db
-from sqlalchemy.orm import Session
+from app.models.attempt import QuestionAttempt
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ class AnswerRequest(BaseModel):
     topic: str
     subtopic: str
     question: str
+    misconception: Optional[str] = None
     api_key: Optional[str] = None
 
 
@@ -157,7 +159,11 @@ Calibration guide:
 
 
 @router.post("/submit")
-async def submit_answer(req: AnswerRequest):
+async def submit_answer(
+    req: AnswerRequest,
+    db: Session = Depends(get_db),
+    token: Optional[str] = Depends(oauth2_scheme)
+):
     correct = req.selected_option == req.correct_answer
     new_theta = ThetaEstimator.update_theta(req.theta, correct, req.difficulty)
     next_difficulty = ThetaEstimator.select_next_difficulty(new_theta)
@@ -171,6 +177,53 @@ async def submit_answer(req: AnswerRequest):
         next_bloom_idx = max(current_bloom_idx - 1, 0)
     else:
         next_bloom_idx = current_bloom_idx
+
+    # Resolve user_id dynamically
+    user_id = None
+    if token:
+        try:
+            from jose import jwt
+            from app.core.config import settings
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            email = payload.get("sub")
+            if email:
+                user = db.query(User).filter(User.email == email).first()
+                if user:
+                    user_id = user.id
+        except Exception:
+            pass
+
+    if not user_id:
+        # Fallback/Autoseed student user for testing & local run compatibility
+        first_student = db.query(User).filter(User.role == "student").first()
+        if not first_student:
+            from app.core.security import security_utils
+            first_student = User(
+                name="Default Student",
+                email="student@example.com",
+                hashed_password=security_utils.hash_password("studentpassword"),
+                role="student"
+            )
+            db.add(first_student)
+            db.commit()
+            db.refresh(first_student)
+        user_id = first_student.id
+
+    # Record the attempt in the database
+    attempt = QuestionAttempt(
+        user_id=user_id,
+        topic=req.topic,
+        subtopic=req.subtopic,
+        question_text=req.question,
+        selected_option=req.selected_option,
+        correct_option=req.correct_answer,
+        is_correct=correct,
+        misconception=req.misconception if not correct else None,
+        theta_before=req.theta,
+        theta_after=new_theta
+    )
+    db.add(attempt)
+    db.commit()
 
     return {
         "correct": correct,

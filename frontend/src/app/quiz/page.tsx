@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -13,7 +13,7 @@ import { useBrowserMonitoring } from '@/hooks/useBrowserMonitoring';
 import { WarningModal } from '@/components/quiz/WarningModal';
 
 
-export default function QuizPage() {
+function QuizContent() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -218,15 +218,20 @@ export default function QuizPage() {
     if (isCorrect) setScore(s => s + 1);
 
     try {
+      // Get misconception if the user was incorrect
+      const selectedOptionKey = q.optKeys[selected];
+      const misconceptionText = !isCorrect && q.misconceptions ? q.misconceptions[selectedOptionKey] : null;
+
       // 1. Submit to IRT backend to update theta
       const res = await submitAnswer({
         theta: theta,
         difficulty: difficulty,
-        selected_option: q.optKeys[selected],
+        selected_option: selectedOptionKey,
         correct_answer: q.optKeys[q.correct],
         topic: inputTopic,
         subtopic: selectedSubtopic || "General",
-        question: q.question
+        question: q.question,
+        misconception: misconceptionText
       });
       
       setTheta(res.new_theta);
@@ -814,6 +819,22 @@ export default function QuizPage() {
         onEndQuiz={() => router.push('/dashboard')}
       />
     </div>
+  );
+}
+
+
+export default function QuizPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '2.5rem', height: '2.5rem', border: '3px solid #EDE9FE', borderTopColor: '#7C3AED', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1rem' }} />
+          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Loading Quiz...</p>
+        </div>
+      </div>
+    }>
+      <QuizContent />
+    </Suspense>
   );
 }
 

@@ -1,9 +1,6 @@
 from sqlalchemy import Column, Integer, Float, DateTime, String
-from sqlalchemy.orm import declarative_base
 from datetime import datetime
-
-# TODO: Import the actual Base from your database configuration (e.g., app.database)
-Base = declarative_base()
+from app.models.base import Base
 
 class ReviewSchedule(Base):
     __tablename__ = "review_schedules"

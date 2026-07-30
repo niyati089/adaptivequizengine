@@ -5,5 +5,5 @@ def test_add_dependency():
     """
     TODO: Add tests for Topic DAG.
     """
-    dag = TopicDAGEngine()
+    dag = TopicDAGEngine("mock_api_key")
     assert True

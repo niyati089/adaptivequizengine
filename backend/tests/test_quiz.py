@@ -1,33 +1,41 @@
-def test_quiz_submit_high_confidence_incorrect(client, mock_groq_client):
+import pytest
+
+def test_quiz_submit_incorrect(client):
     response = client.post(
         "/api/quiz/submit",
         json={
-            "question_id": 1,
-            "selected_option": "Wrong Answer",
-            "time_taken_ms": 1500,
-            "confidence": 5
+            "theta": 0.0,
+            "difficulty": 0.0,
+            "selected_option": "B",
+            "correct_answer": "A",
+            "topic": "Computer Science",
+            "subtopic": "Introduction",
+            "question": "What is 1 + 1?",
+            "misconception": "Adding error"
         }
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["correct"] == False
-    assert data["feedback_mode"] == "socratic"
-    assert data["hint"] == "Mocked Hint or True"
+    assert data["correct"] is False
+    assert data["new_theta"] < 0.0  # theta should decrease
 
 def test_quiz_submit_correct(client):
     response = client.post(
         "/api/quiz/submit",
         json={
-            "question_id": 1,
-            "selected_option": "Paris",  # the mock correct answer in service
-            "time_taken_ms": 1500,
-            "confidence": 5
+            "theta": 0.0,
+            "difficulty": 0.0,
+            "selected_option": "A",
+            "correct_answer": "A",
+            "topic": "Computer Science",
+            "subtopic": "Introduction",
+            "question": "What is 1 + 1?"
         }
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["correct"] == True
-    assert data["feedback_mode"] == "normal"
+    assert data["correct"] is True
+    assert data["new_theta"] > 0.0  # theta should increase
 
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -97,4 +105,3 @@ def test_quiz_generate_variant(client):
         data = response.json()
         assert data["question"] == "If you have 2 apples and get 2 more, how many do you have?"
         assert data["is_variant"] == True
-
