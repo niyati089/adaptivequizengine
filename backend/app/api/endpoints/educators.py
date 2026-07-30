@@ -66,12 +66,25 @@ def get_educator_dashboard(
                 "id": student.id,
                 "name": student.name,
                 "email": student.email,
+                "mastery": 0,
+                "theta": "0.00",
+                "velocity": "N/A",
+                "trend": "stable",
+                "topics": 0,
                 "sessions": get_student_proctoring(student.id)
             })
+        mock_students = [
+            {"name": "Aisha Kumar", "mastery": 82, "theta": "+0.91", "velocity": "Fast", "trend": "up", "topics": 8, "sessions": []},
+            {"name": "Marcus Tee", "mastery": 74, "theta": "+0.62", "velocity": "Fast", "trend": "up", "topics": 7, "sessions": []},
+            {"name": "Priya Sharma", "mastery": 61, "theta": "+0.38", "velocity": "Medium", "trend": "up", "topics": 5, "sessions": []},
+            {"name": "Leon Baxter", "mastery": 48, "theta": "+0.11", "velocity": "Slow", "trend": "down", "topics": 4, "sessions": []},
+            {"name": "Sofia Reyes", "mastery": 55, "theta": "+0.28", "velocity": "Medium", "trend": "stable", "topics": 5, "sessions": []},
+            {"name": "James Wu", "mastery": 38, "theta": "-0.14", "velocity": "Slow", "trend": "down", "topics": 3, "sessions": []}
+        ]
         return {
             "is_mock": True,
             "kpis": {
-                "active_students": "124",
+                "active_students": str(len(students_in_db)),
                 "avg_class_mastery": "61%",
                 "active_misconceptions": "12",
                 "avg_theta_velocity": "+0.15"
@@ -90,15 +103,7 @@ def get_educator_dashboard(
                 {"issue": "Sign errors in algebra", "pct": 35, "severity": "high"},
                 {"issue": "Decimal place value", "pct": 19, "severity": "low"}
             ],
-            "students": [
-                {"name": "Aisha Kumar", "mastery": 82, "theta": "+0.91", "velocity": "Fast", "trend": "up", "topics": 8},
-                {"name": "Marcus Tee", "mastery": 74, "theta": "+0.62", "velocity": "Fast", "trend": "up", "topics": 7},
-                {"name": "Priya Sharma", "mastery": 61, "theta": "+0.38", "velocity": "Medium", "trend": "up", "topics": 5},
-                {"name": "Leon Baxter", "mastery": 48, "theta": "+0.11", "velocity": "Slow", "trend": "down", "topics": 4},
-                {"name": "Sofia Reyes", "mastery": 55, "theta": "+0.28", "velocity": "Medium", "trend": "stable", "topics": 5},
-                {"name": "James Wu", "mastery": 38, "theta": "-0.14", "velocity": "Slow", "trend": "down", "topics": 3}
-            ],
-            "db_students": student_list
+            "students": student_list + mock_students
         }
 
     # 4. Calculate actual metrics
@@ -107,12 +112,25 @@ def get_educator_dashboard(
 
     student_records = []
     total_mastery = 0.0
+    students_with_attempts_count = 0
 
     for student in students_in_db:
         student_attempts = [a for a in attempts if a.user_id == student.id]
         if not student_attempts:
+            student_records.append({
+                "id": student.id,
+                "name": student.name,
+                "email": student.email,
+                "mastery": 0,
+                "theta": "0.00",
+                "velocity": "N/A",
+                "trend": "stable",
+                "topics": 0,
+                "sessions": get_student_proctoring(student.id)
+            })
             continue
 
+        students_with_attempts_count += 1
         mastery = mastery_calc.calculate_mastery(student.id, topic, db=db)
         total_mastery += mastery
 
@@ -142,7 +160,9 @@ def get_educator_dashboard(
         mastered_subtopics = len(set(a.subtopic for a in student_attempts if a.is_correct))
 
         student_records.append({
+            "id": student.id,
             "name": student.name,
+            "email": student.email,
             "mastery": int(round(mastery)),
             "theta": theta_str,
             "velocity": velocity,
@@ -151,7 +171,7 @@ def get_educator_dashboard(
             "sessions": get_student_proctoring(student.id)
         })
 
-    avg_class_mastery_val = int(round(total_mastery / len(student_records))) if student_records else 0
+    avg_class_mastery_val = int(round(total_mastery / students_with_attempts_count)) if students_with_attempts_count > 0 else 0
 
     # Active misconceptions list & count
     active_misc_list = misc_analyzer.analyze_class_misconceptions(topic, db=db)
