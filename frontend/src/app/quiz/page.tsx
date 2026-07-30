@@ -6,8 +6,12 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import setupImage from '@/components/images/image2.png';
-import { Lightbulb, ChevronRight, Clock, BarChart2, CheckCircle, XCircle, ChevronDown, Loader2 } from 'lucide-react';
+import { Lightbulb, ChevronRight, Clock, BarChart2, CheckCircle, XCircle, ChevronDown, Loader2, Shield, Camera, AlertCircle } from 'lucide-react';
 import { generateQuestion, submitAnswer, getSocraticHint, getExplanation, scheduleReview, generateTopicDag } from '@/services/quizService';
+import { useProctoring } from '@/hooks/useProctoring';
+import { useBrowserMonitoring } from '@/hooks/useBrowserMonitoring';
+import { WarningModal } from '@/components/quiz/WarningModal';
+
 
 export default function QuizPage() {
   const { user, isLoading } = useAuth();
@@ -28,7 +32,7 @@ export default function QuizPage() {
 
 
   // Quiz tracking
-  const [quizState, setQuizState] = useState<'setup' | 'playing'>('setup');
+  const [quizState, setQuizState] = useState<'setup' | 'playing' | 'summary'>('setup');
   const [inputTopic, setInputTopic] = useState(selectedTopic || "");
   const [dagData, setDagData] = useState<any>(null);
   const [isLoadingDag, setIsLoadingDag] = useState(false);
@@ -58,15 +62,54 @@ export default function QuizPage() {
   const [expLoading, setExpLoading] = useState(false);
   const [aiExplanation, setAiExplanation] = useState("");
 
+  const [enableAntiCheating, setEnableAntiCheating] = useState(true);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  // Stable session ID shared by both proctoring hooks and the quiz service
+  const sessionId = `session_${user?.id || 'guest'}_${inputTopic}`;
+
+  // AI Proctoring Hook
+  const proctoring = useProctoring(quizState === 'playing', sessionId);
+
+  // Browser Monitoring & Anti-Cheating Focus Hook
+  const browserMonitoring = useBrowserMonitoring({
+    maxWarnings: 2,
+    sessionId,
+    enabled: quizState === 'playing',
+    onAutoLock: () => {
+      // Intentionally empty — redirect handled by the useEffect below
+      // to avoid dual setTimeout race conditions
+    }
+  });
+
+  // HARD LOCK condition: 2 tab switches / browser violations reached
+  // Also locks when backend-restored session count is ≥ maxWarnings
+  const isSessionLocked = browserMonitoring.isLocked || browserMonitoring.warningsCount >= 2;
+
+  // Auto-redirect to dashboard when session is locked — single redirect path
+  useEffect(() => {
+    if (isSessionLocked && quizState === 'playing') {
+      const exitTimer = setTimeout(() => {
+        router.push('/dashboard');
+      }, 2500);
+      return () => clearTimeout(exitTimer);
+    }
+  }, [isSessionLocked, quizState, router]);
+
+
   const fetchNextQuestion = async (currentTheta: number, prevQuestions: string[] = []) => {
+    if (isSessionLocked) return;
     setIsGenLoading(true);
+    setGenError(null);
     try {
       const data = await generateQuestion({
         topic: inputTopic,
         subtopic: selectedSubtopic || "General",
         difficulty: currentTheta,
         bloom_level: bloomLevel,
-        previous_questions: prevQuestions
+        previous_questions: prevQuestions,
+        enable_anti_cheating: enableAntiCheating,
+        session_id: sessionId,  // Fix 2: backend verifies lock status before serving question
       });
       setQ({
         question: data.question,
@@ -79,16 +122,27 @@ export default function QuizPage() {
         diffLabel: 'Adaptive',
         hint: data.hint,
         explanation: data.explanation,
-        misconceptions: data.misconceptions
+        misconceptions: data.misconceptions,
+        isVariant: data.is_variant
       });
       setDifficulty(currentTheta);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      // Fix 2: Backend returns 403 when the session is locked server-side.
+      // This handles the case where client state was bypassed via DevTools.
+      if (e?.response?.status === 403) {
+        console.warn('[Quiz] Backend refused question — session is locked (403)');
+        // The isSessionLocked derived state will trigger via browserMonitoring;
+        // we don't need to manually set it — the redirect effect handles the rest.
+      } else {
+        console.error(e);
+        setGenError(e?.response?.data?.detail || e?.message || "Failed to generate question. Please try again.");
+      }
     } finally {
       setIsGenLoading(false);
       setTimer(60);
     }
   };
+
 
   const handleGenerateDag = async () => {
     if (!inputTopic.trim()) return;
@@ -115,11 +169,12 @@ export default function QuizPage() {
 
   const startQuiz = () => {
     setQuizState('playing');
+    browserMonitoring.enterFullscreen();
     fetchNextQuestion(0.0);
   };
 
   useEffect(() => {
-    if (submitted || !q) return;
+    if (submitted || !q || isSessionLocked) return;
     const interval = setInterval(() => {
       setTimer(t => {
         if (t <= 1) { clearInterval(interval); setSubmitted(true); return 0; }
@@ -127,14 +182,15 @@ export default function QuizPage() {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [q, submitted]);
+  }, [q, submitted, isSessionLocked]);
 
   const handleSelect = (i: number) => {
-    if (submitted || isSubmitting) return;
+    if (submitted || isSubmitting || isSessionLocked) return;
     setSelected(i);
   };
 
   const handleRevealHint = async () => {
+    if (isSessionLocked) return;
     setShowHint(true);
     setHintLoading(true);
     try {
@@ -154,7 +210,7 @@ export default function QuizPage() {
   };
 
   const handleSubmit = async () => {
-    if (selected === null || !q) return;
+    if (selected === null || !q || isSessionLocked) return;
     setIsSubmitting(true);
     setSubmitted(true);
     
@@ -215,6 +271,13 @@ export default function QuizPage() {
     
     // Fetch next dynamic question
     fetchNextQuestion(theta, [q.question]); 
+  };
+
+  const handleEndQuiz = () => {
+    if (window.confirm("Are you sure you want to end the quiz? Your final score and estimated ability level will be saved.")) {
+      proctoring.stopProctoring();
+      setQuizState('summary');
+    }
   };
 
   if (isLoading || !user || user.role !== 'student') {
@@ -289,10 +352,115 @@ export default function QuizPage() {
           <button 
             onClick={startQuiz}
             disabled={!inputTopic || isLoadingDag}
-            style={{ width: '100%', background: '#10B981', color: 'white', padding: '0.875rem', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '1rem', cursor: !inputTopic || isLoadingDag ? 'not-allowed' : 'pointer', opacity: !inputTopic || isLoadingDag ? 0.5 : 1 }}
+            style={{ width: '100%', background: '#10B981', color: 'white', padding: '0.875rem', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '1rem', cursor: !inputTopic || isLoadingDag ? 'not-allowed' : 'pointer', opacity: !inputTopic || isLoadingDag ? 0.5 : 1, marginBottom: '1rem' }}
           >
             Start Quiz
           </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.375rem', color: '#10B981', fontSize: '0.75rem', fontWeight: 600 }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            Dynamic Concept Mastery Variants Active
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (quizState === 'summary') {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC', padding: '2rem' }}>
+        <div style={{ background: 'white', padding: '2.5rem', borderRadius: '16px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '480px', textAlign: 'center', border: '1px solid #E5E7EB' }}>
+          <div style={{ width: '4rem', height: '4rem', background: '#ECFDF5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', border: '2px solid #A7F3D0' }}>
+            <CheckCircle size={32} color="#10B981" />
+          </div>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: '#111827', letterSpacing: '-0.02em' }}>Quiz Completed!</h2>
+          <p style={{ fontSize: '0.9375rem', color: '#6B7280', marginBottom: '2rem' }}>Great job completing your adaptive learning session on <strong>{inputTopic}</strong>.</p>
+          
+          <div style={{ background: '#F9FAFB', borderRadius: '12px', padding: '1.5rem', border: '1px solid #F3F4F6', marginBottom: '2rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div style={{ textAlign: 'center', borderRight: '1px solid #E5E7EB' }}>
+              <span style={{ display: 'block', fontSize: '0.75rem', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Final Score</span>
+              <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#111827' }}>{score} <span style={{ fontSize: '1rem', color: '#6B7280', fontWeight: 500 }}>/ {qIndex + (submitted ? 1 : 0)}</span></span>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <span style={{ display: 'block', fontSize: '0.75rem', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Estimated Ability</span>
+              <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#7C3AED' }}>{(theta > 0 ? '+' : '')}{theta.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <button 
+              onClick={() => {
+                setQuizState('setup');
+                setScore(0);
+                setQIndex(0);
+                setTheta(0.0);
+                setQ(null);
+                setBloomLevel("Remembering");
+                setDifficulty(0.5);
+              }}
+              style={{ width: '100%', background: '#7C3AED', color: 'white', padding: '0.875rem', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '0.9375rem', cursor: 'pointer', transition: 'all 0.15s ease' }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#6D28D9'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#7C3AED'}
+            >
+              Start Another Topic
+            </button>
+            <button 
+              onClick={() => router.push('/dashboard')}
+              style={{ width: '100%', background: 'transparent', color: '#4B5563', border: '1px solid #D1D5DB', padding: '0.875rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.9375rem', cursor: 'pointer', transition: 'all 0.15s ease' }}
+              onMouseOver={(e) => { e.currentTarget.style.background = '#F9FAFB'; e.currentTarget.style.borderColor = '#9CA3AF'; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#D1D5DB'; }}
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fix 1: Show restoring state while seeding violation count from backend
+  if (browserMonitoring.isRestoringSession) {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ width: '2.5rem', height: '2.5rem', border: '3px solid #EDE9FE', borderTopColor: '#7C3AED', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1rem' }} />
+          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Restoring session integrity state...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (genError) {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC', padding: '1rem' }}>
+        <div style={{ background: 'white', padding: '2rem', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)', maxWidth: '28rem', width: '100%', textAlign: 'center' }}>
+          <div style={{ width: '3rem', height: '3rem', background: '#FEE2E2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+            <AlertCircle style={{ color: '#DC2626', width: '1.5rem', height: '1.5rem' }} />
+          </div>
+          <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: '#111827', marginBottom: '0.5rem' }}>Failed to Load Quiz</h3>
+          <p style={{ color: '#6B7280', fontSize: '0.875rem', marginBottom: '1.5rem', lineHeight: '1.5' }}>
+            {genError}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <button
+              onClick={() => fetchNextQuestion(theta)}
+              style={{ background: '#7C3AED', color: 'white', border: 'none', padding: '0.75rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', transition: 'background-color 0.2s' }}
+              onMouseOver={(e) => (e.currentTarget.style.background = '#6D28D9')}
+              onMouseOut={(e) => (e.currentTarget.style.background = '#7C3AED')}
+            >
+              Retry Loading Question
+            </button>
+            <button
+              onClick={() => router.push('/dashboard')}
+              style={{ background: 'transparent', color: '#4B5563', border: '1px solid #D1D5DB', padding: '0.75rem', borderRadius: '8px', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', transition: 'all 0.2s' }}
+              onMouseOver={(e) => { e.currentTarget.style.background = '#F9FAFB'; e.currentTarget.style.borderColor = '#9CA3AF'; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#D1D5DB'; }}
+            >
+              Back to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -303,7 +471,9 @@ export default function QuizPage() {
       <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: '2.5rem', height: '2.5rem', border: '3px solid #EDE9FE', borderTopColor: '#7C3AED', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1rem' }} />
-          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>Generating next adaptive question...</p>
+          <p style={{ color: '#6B7280', fontSize: '0.875rem', fontWeight: 500 }}>
+            Generating next adaptive question...
+          </p>
         </div>
       </div>
     );
@@ -336,14 +506,39 @@ export default function QuizPage() {
 
         {/* Left: Question */}
         <div>
-          {/* Question card */}
-          <div className="card" style={{ marginBottom: '1rem', background: 'white', borderRadius: '12px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+          {/* Question card with Copy/Paste Protection */}
+          <div 
+            className="card" 
+            {...browserMonitoring.copyPreventionHandlers}
+            style={{ marginBottom: '1rem', background: 'white', borderRadius: '12px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', userSelect: 'none', WebkitUserSelect: 'none' }}
+          >
+
             {/* Card header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
                 <span style={{ background: `${q.topicColor}15`, color: q.topicColor, padding: '0.3rem 0.75rem', borderRadius: '9999px', fontSize: '0.8125rem', fontWeight: 600 }}>
                   {q.topic}
                 </span>
+                {q.isVariant && (
+                  <span style={{ 
+                    background: '#ECFDF5', 
+                    color: '#10B981', 
+                    border: '1.5px solid #A7F3D0',
+                    padding: '0.25rem 0.65rem', 
+                    borderRadius: '9999px', 
+                    fontSize: '0.8125rem', 
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    boxShadow: '0 2px 4px rgba(16, 185, 129, 0.05)'
+                  }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                    Concept Mastery Variant
+                  </span>
+                )}
                 <span style={{ background: '#F3F4F6', color: '#6B7280', padding: '0.3rem 0.75rem', borderRadius: '9999px', fontSize: '0.8125rem', fontWeight: 500 }}>
                   θ = {(q.difficulty > 0 ? '+' : '')}{q.difficulty.toFixed(2)} · {q.diffLabel}
                 </span>
@@ -385,28 +580,51 @@ export default function QuizPage() {
 
             {/* Action buttons */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid #F3F4F6' }}>
-              {!submitted ? (
-                <button
-                  onClick={handleSubmit}
-                  disabled={selected === null || isSubmitting}
-                  style={{
-                    background: selected === null || isSubmitting ? '#E5E7EB' : '#7C3AED',
-                    color: selected === null || isSubmitting ? '#9CA3AF' : 'white',
-                    border: 'none', borderRadius: '10px', padding: '0.75rem 2rem',
-                    fontWeight: 700, fontSize: '0.9375rem', cursor: selected === null || isSubmitting ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {isSubmitting ? 'Submitting...' : 'Submit Answer'}
-                </button>
-              ) : (
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                {!submitted ? (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={selected === null || isSubmitting}
+                    style={{
+                      background: selected === null || isSubmitting ? '#E5E7EB' : '#7C3AED',
+                      color: selected === null || isSubmitting ? '#9CA3AF' : 'white',
+                      border: 'none', borderRadius: '10px', padding: '0.75rem 2rem',
+                      fontWeight: 700, fontSize: '0.9375rem', cursor: selected === null || isSubmitting ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {isSubmitting ? 'Submitting...' : 'Submit Answer'}
+                  </button>
+                ) : (
                   <button onClick={handleNext}
                     style={{ background: '#7C3AED', color: 'white', border: 'none', borderRadius: '10px', padding: '0.75rem 1.5rem', fontWeight: 700, fontSize: '0.9375rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
                     Next Question <ChevronRight size={16} />
                   </button>
-                </div>
-              )}
+                )}
+                
+                <button
+                  onClick={handleEndQuiz}
+                  style={{
+                    background: '#FEF2F2',
+                    color: '#DC2626',
+                    border: '1px solid #FCA5A5',
+                    borderRadius: '10px',
+                    padding: '0.75rem 1.5rem',
+                    fontWeight: 700,
+                    fontSize: '0.9375rem',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = '#FEE2E2';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = '#FEF2F2';
+                  }}
+                >
+                  End Quiz
+                </button>
+              </div>
               <span style={{ fontSize: '0.875rem', color: '#9CA3AF' }}>
                 Score: {score}/{qIndex + (submitted ? 1 : 0)}
               </span>
@@ -492,12 +710,110 @@ export default function QuizPage() {
             </div>
           </div>
 
+          {/* AI Proctoring Card */}
+          <div className="card" style={{ padding: '1.25rem', background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: proctoring.violations.total > 0 ? '1.5px solid #FCA5A5' : '1px solid #E5E7EB' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Shield size={18} color={proctoring.isProctoring ? '#059669' : '#D97706'} />
+                <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#111827' }}>AI Proctoring</span>
+              </div>
+              <span style={{
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                padding: '0.15rem 0.5rem',
+                borderRadius: '9999px',
+                background: proctoring.isProctoring ? '#ECFDF5' : '#FEF3C7',
+                color: proctoring.isProctoring ? '#059669' : '#D97706'
+              }}>
+                {proctoring.isProctoring ? 'Active' : 'Standby'}
+              </span>
+            </div>
+
+            {/* Webcam video feed preview */}
+            <div style={{ position: 'relative', width: '100%', height: '110px', borderRadius: '8px', overflow: 'hidden', background: '#111827', marginBottom: '0.875rem' }}>
+              <video
+                ref={proctoring.videoRef}
+                autoPlay
+                playsInline
+                muted
+                style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
+              />
+              {!proctoring.permissionGranted && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(17, 24, 39, 0.85)', padding: '0.5rem', textAlign: 'center' }}>
+                  <Camera size={20} color="#9CA3AF" />
+                  <span style={{ fontSize: '0.75rem', color: '#D1D5DB', marginTop: '0.25rem' }}>
+                    {proctoring.cameraError || 'Requesting Camera...'}
+                  </span>
+                </div>
+              )}
+              {proctoring.isProctoring && (
+                <div style={{ position: 'absolute', top: '6px', left: '6px', background: 'rgba(0, 0, 0, 0.65)', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: proctoring.faceDetected ? '#10B981' : '#EF4444' }} />
+                  <span style={{ fontSize: '0.6875rem', color: 'white', fontWeight: 600 }}>
+                    {proctoring.faceDetected ? 'Face Detected' : 'No Face'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+
+
+            {/* Micro Indicators: Violations */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+              {/* Total Integrity Flags */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.375rem', borderTop: '1px solid #F3F4F6' }}>
+                <span style={{ fontSize: '0.75rem', color: '#6B7280', fontWeight: 500 }}>Integrity Flags</span>
+                <span style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  padding: '0.1rem 0.5rem',
+                  borderRadius: '9999px',
+                  background: proctoring.violations.total > 0 ? '#FEE2E2' : '#F3F4F6',
+                  color: proctoring.violations.total > 0 ? '#DC2626' : '#6B7280'
+                }}>
+                  {proctoring.violations.total}
+                </span>
+              </div>
+
+              {/* Breakdown metrics */}
+              {proctoring.violations.total > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-around', background: '#FAFAFA', padding: '0.375rem', borderRadius: '6px', fontSize: '0.6875rem', color: '#4B5563' }}>
+                  <span>Face: {proctoring.violations.noFaceCount}</span>
+                  <span>Tab: {proctoring.violations.tabSwitchCount}</span>
+                </div>
+              )}
+
+              {/* Warning Alert Banner */}
+              {proctoring.lastViolationMessage && proctoring.violations.total > 0 && (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.375rem', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '6px', padding: '0.5rem', marginTop: '0.25rem' }}>
+                  <AlertCircle size={14} color="#DC2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <span style={{ fontSize: '0.6875rem', color: '#991B1B', lineHeight: 1.3, fontWeight: 500 }}>
+                    {proctoring.lastViolationMessage}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+
           {/* Quit link */}
           <Link href="/dashboard" style={{ display: 'block', textAlign: 'center', fontSize: '0.875rem', color: '#9CA3AF', textDecoration: 'none', padding: '0.5rem' }}>
             ← Back to Dashboard
           </Link>
         </div>
       </div>
+
+      {/* Browser Monitoring Warning & Lockdown Modal */}
+      <WarningModal
+        isVisible={browserMonitoring.showWarningModal || isSessionLocked}
+        isLocked={isSessionLocked}
+        lastViolation={browserMonitoring.lastViolation || { type: 'TAB_SWITCH', message: 'Maximum integrity violations exceeded.', timestamp: new Date().toISOString() }}
+        warningsCount={browserMonitoring.warningsCount}
+        maxWarnings={2}
+        onDismiss={isSessionLocked ? () => {} : browserMonitoring.dismissWarning}
+        onEndQuiz={() => router.push('/dashboard')}
+      />
     </div>
   );
 }
+

@@ -7,8 +7,16 @@ import json
 from app.irt.theta_estimator import ThetaEstimator
 from app.models.user import User
 from app.api.endpoints.users import get_current_student
+from app.models.proctoring_event import ProctoringEvent
+from app.database.session import get_db
+from sqlalchemy.orm import Session
 
 router = APIRouter()
+
+# Must stay in sync with proctoring.py constant
+_LOCKABLE_TYPES = {"TAB_SWITCH", "FULLSCREEN_EXIT", "COPY_ATTEMPT", "PASTE_ATTEMPT"}
+_MAX_VIOLATIONS = 2
+
 
 class QuestionRequest(BaseModel):
     topic: str
@@ -17,6 +25,9 @@ class QuestionRequest(BaseModel):
     bloom_level: str
     previous_questions: list[str] = []
     api_key: Optional[str] = None
+    enable_anti_cheating: Optional[bool] = True
+    session_id: Optional[str] = None  # Required for lock enforcement when authenticated
+
 
 class AnswerRequest(BaseModel):
     theta: float
@@ -28,8 +39,39 @@ class AnswerRequest(BaseModel):
     question: str
     api_key: Optional[str] = None
 
+
+def _check_session_locked(session_id: str, db: Session) -> bool:
+    """
+    Returns True if this session has reached the violation threshold.
+    Checked server-side so client-side state manipulation cannot bypass it.
+    """
+    try:
+        count = db.query(ProctoringEvent).filter(
+            ProctoringEvent.session_id == session_id,
+            ProctoringEvent.event_type.in_(list(_LOCKABLE_TYPES))
+        ).count()
+        return count >= _MAX_VIOLATIONS
+    except Exception:
+        # If DB is unavailable, fail open (allow question) — proctoring fallback handles logging
+        return False
+
+
 @router.post("/generate")
-async def generate_question(req: QuestionRequest):
+async def generate_question(
+    req: QuestionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_student)
+):
+    # ── Fix 2: Server-side session lock check ──────────────────────────────────
+    # Even if the client manipulates React state to set isLocked=false, the
+    # backend will refuse to serve new questions if the DB shows ≥2 violations.
+    if req.session_id:
+        if _check_session_locked(req.session_id, db):
+            raise HTTPException(
+                status_code=403,
+                detail="Session locked: integrity violations exceeded. No further questions will be served."
+            )
+
     api_key = req.api_key or os.getenv("GROQ_API_KEY")
     if not api_key:
         raise HTTPException(status_code=400, detail="API key required")
@@ -99,7 +141,19 @@ Calibration guide:
     if "hint" not in data:
         data["hint"] = "Think critically about the options presented."
 
+    if req.enable_anti_cheating:
+        from app.agents.question_gen import QuestionGenerationAgent
+        from groq import AsyncGroq
+        agent = QuestionGenerationAgent()
+        if api_key:
+            agent.client = AsyncGroq(api_key=api_key)
+        variant_data = await agent.generate_variant(data)
+        return variant_data
+
+    # For base questions, set is_variant to False
+    data["is_variant"] = False
     return data
+
 
 
 @router.post("/submit")
@@ -114,8 +168,6 @@ async def submit_answer(req: AnswerRequest):
     if correct and new_theta > req.theta + 0.1:
         next_bloom_idx = min(current_bloom_idx + 1, len(bloom_order) - 1)
     elif not correct and new_theta < req.theta - 0.1:
-        next_bloom_idx = max(current_bloom_idx - 0, 0) # Should be -1
-        # fix:
         next_bloom_idx = max(current_bloom_idx - 1, 0)
     else:
         next_bloom_idx = current_bloom_idx

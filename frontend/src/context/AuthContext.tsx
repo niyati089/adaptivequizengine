@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import axios, { AxiosInstance } from 'axios';
 
 export interface User {
-  id?: number;
+  id: number;
   name: string;
   email: string;
   role: 'student' | 'teacher';
@@ -65,9 +65,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const response = await apiInstance.post('/users/login', { email, password });
-      const { access_token, role, name } = response.data;
+      const { access_token, role, name, id } = response.data;
 
-      const newUser: User = { name, email, role };
+      const newUser: User = { id, name, email, role };
       
       localStorage.setItem('auth_token', access_token);
       localStorage.setItem('auth_user', JSON.stringify(newUser));

@@ -10,9 +10,13 @@ def event_loop():
     yield loop
     loop.close()
 
+import httpx
+
 @pytest.fixture
-def client():
-    return TestClient(app)
+async def client():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
 
 @pytest.fixture(autouse=True)
 def mock_groq_client():

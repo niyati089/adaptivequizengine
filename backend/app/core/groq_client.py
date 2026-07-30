@@ -1,4 +1,4 @@
-from openai import AsyncOpenAI
+from groq import AsyncGroq
 from app.core.config import config
 
 class GroqClient:
@@ -7,14 +7,14 @@ class GroqClient:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(GroqClient, cls).__new__(cls)
-            cls._instance.client = AsyncOpenAI(
-                api_key=config.GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1"
+            cls._instance.client = AsyncGroq(
+                api_key=config.GROQ_API_KEY
             )
         return cls._instance
 
-def get_groq_client() -> AsyncOpenAI:
+def get_groq_client() -> AsyncGroq:
     """
-    Returns a singleton instance of the AsyncOpenAI client configured for Groq.
+    Returns a singleton instance of the AsyncGroq client.
     """
     return GroqClient().client
+

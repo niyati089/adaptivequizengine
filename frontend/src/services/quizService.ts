@@ -6,6 +6,8 @@ export interface QuestionRequest {
   difficulty: number;
   bloom_level: string;
   previous_questions?: string[];
+  enable_anti_cheating?: boolean;
+  session_id?: string; // Required for backend lock enforcement (Fix 2)
 }
 
 export interface AnswerRequest {
