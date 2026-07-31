@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 
 class ExplanationRequest(BaseModel):
     question: str
@@ -8,3 +9,4 @@ class ExplanationRequest(BaseModel):
 class ExplanationResponse(BaseModel):
     explanation: str
     key_takeaway: str
+    diagram_url: Optional[str] = None
