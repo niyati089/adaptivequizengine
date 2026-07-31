@@ -47,6 +47,7 @@ class AnswerRequest(BaseModel):
     subtopic: str
     question: str
     misconception: Optional[str] = None
+    question_index: int = 1
     api_key: Optional[str] = None
     # New fields for complete question data
     question_options: Optional[dict] = None  # {A: "...", B: "...", C: "...", D: "..."}
@@ -112,6 +113,7 @@ Previously asked questions (DO NOT repeat these):
 Respond ONLY with valid JSON (no markdown, no backticks):
 {{
   "question": "The question text",
+  "concept": "The specific concept this question tests (e.g. 'TensorFlow', 'Backpropagation', 'Gradient Descent') — be specific, not the subtopic name itself",
   "options": {{
     "A": "Option A text",
     "B": "Option B text",
@@ -156,7 +158,7 @@ Calibration guide:
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=500, detail=f"JSON parse error: {e}")
 
-    # Optionally pass along an empty hint so frontend doesn't break
+    # Ensure fallback fields so frontend never breaks
     if "hint" not in data:
         data["hint"] = "Think critically about the options presented."
 
@@ -185,7 +187,7 @@ async def submit_answer(
     token: Optional[str] = Depends(oauth2_scheme)
 ):
     correct = req.selected_option == req.correct_answer
-    new_theta = ThetaEstimator.update_theta(req.theta, correct, req.difficulty)
+    new_theta = ThetaEstimator.update_theta(req.theta, correct, req.difficulty, req.question_index)
     next_difficulty = ThetaEstimator.select_next_difficulty(new_theta)
 
     bloom_order = ["remember", "understand", "apply", "analyze", "evaluate", "create"]

@@ -6,12 +6,20 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import setupImage from '@/components/images/image2.png';
-import { Lightbulb, ChevronRight, Clock, BarChart2, CheckCircle, XCircle, ChevronDown, Loader2, Shield, Camera, AlertCircle } from 'lucide-react';
+import { Lightbulb, ChevronRight, Clock, BarChart2, CheckCircle, XCircle, ChevronDown, Loader2, Shield, Camera, AlertCircle, Trophy, Target, Brain, AlertTriangle, Home, RotateCcw } from 'lucide-react';
 import { generateQuestion, submitAnswer, getSocraticHint, getExplanation, scheduleReview, generateTopicDag } from '@/services/quizService';
 import { useProctoring } from '@/hooks/useProctoring';
 import { useBrowserMonitoring } from '@/hooks/useBrowserMonitoring';
 import { WarningModal } from '@/components/quiz/WarningModal';
 
+
+interface QuestionRecord {
+  question: string;
+  subtopic: string;
+  concept: string;
+  correct: boolean;
+  bloomLevel: string;
+}
 
 function QuizContent() {
   const { user, isLoading, api } = useAuth();
@@ -32,7 +40,7 @@ function QuizContent() {
 
 
   // Quiz tracking
-  const [quizState, setQuizState] = useState<'setup' | 'playing' | 'summary'>('setup');
+  const [quizState, setQuizState] = useState<'setup' | 'playing' | 'results' | 'summary'>('setup');
   const [inputTopic, setInputTopic] = useState(selectedTopic || "");
   const [dagData, setDagData] = useState<any>(null);
   const [isLoadingDag, setIsLoadingDag] = useState(false);
@@ -43,12 +51,15 @@ function QuizContent() {
   const [theta, setTheta] = useState(0.0);
   const [bloomLevel, setBloomLevel] = useState("Remembering");
   const [difficulty, setDifficulty] = useState(0.5);
+
+  // Results tracking
+  const [questionHistory, setQuestionHistory] = useState<QuestionRecord[]>([]);
+  const [score, setScore] = useState(0);
   
   // Interaction states
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [timer, setTimer] = useState(60);
-  const [score, setScore] = useState(0);
   const [isGenLoading, setIsGenLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<any>(null);
@@ -123,6 +134,7 @@ function QuizContent() {
         topicColor: '#7C3AED',
         difficulty: currentTheta,
         diffLabel: 'Adaptive',
+        concept: data.concept || selectedSubtopic || 'General',
         hint: data.hint,
         explanation: data.explanation,
         misconceptions: data.misconceptions,
@@ -176,6 +188,81 @@ function QuizContent() {
     fetchNextQuestion(0.0);
   };
 
+  const handleEndTest = () => {
+    setQuizState('results');
+  };
+
+  const handleRestartQuiz = () => {
+    setQuizState('setup');
+    setQIndex(0);
+    setQ(null);
+    setTheta(0.0);
+    setBloomLevel('Remembering');
+    setDifficulty(0.5);
+    setSelected(null);
+    setSubmitted(false);
+    setTimer(60);
+    setScore(0);
+    setQuestionHistory([]);
+    setFeedback(null);
+    setShowHint(false);
+    setAiHint('');
+    setShowExplanation(false);
+    setAiExplanation('');
+    setDagData(null);
+    setInputTopic('');
+    setSelectedSubtopic('');
+  };
+
+  const handleStartConceptQuiz = (concept: string) => {
+    const parentTopic = inputTopic; // capture before any state changes
+    // Reset quiz state but keep the parent topic; use concept as the focused subtopic
+    setQIndex(0);
+    setQ(null);
+    setTheta(0.0);
+    setBloomLevel('Remembering');
+    setDifficulty(0.5);
+    setSelected(null);
+    setSubmitted(false);
+    setTimer(60);
+    setScore(0);
+    setQuestionHistory([]);
+    setFeedback(null);
+    setShowHint(false);
+    setAiHint('');
+    setShowExplanation(false);
+    setAiExplanation('');
+    setDagData(null);
+    // Keep the parent topic; concept becomes the subtopic for targeted drilling
+    setInputTopic(parentTopic);
+    setSelectedSubtopic(concept);
+    setQuizState('playing');
+    setIsGenLoading(true);
+    generateQuestion({
+      topic: parentTopic,
+      subtopic: concept,
+      difficulty: 0.0,
+      bloom_level: 'Remembering',
+      previous_questions: []
+    }).then(data => {
+      setQ({
+        question: data.question,
+        options: [data.options.A, data.options.B, data.options.C, data.options.D],
+        optKeys: ['A', 'B', 'C', 'D'],
+        correct: ['A', 'B', 'C', 'D'].indexOf(data.correct_answer),
+        topic: parentTopic,
+        topicColor: '#EF4444',
+        difficulty: 0.0,
+        diffLabel: 'Adaptive',
+        concept: data.concept || concept,
+        hint: data.hint,
+        explanation: data.explanation,
+        misconceptions: data.misconceptions
+      });
+    }).catch(e => console.error(e))
+      .finally(() => { setIsGenLoading(false); setTimer(60); });
+  };
+
   useEffect(() => {
     if (submitted || !q || isSessionLocked) return;
     const interval = setInterval(() => {
@@ -206,7 +293,7 @@ function QuizContent() {
       setAiHint(res.hint || q.hint);
     } catch (e) {
       console.error("Failed to fetch Socratic hint:", e);
-      setAiHint(q.hint || "Think critically about the options."); // fallback
+      setAiHint(q.hint || "Think critically about the options.");
     } finally {
       setHintLoading(false);
     }
@@ -234,6 +321,7 @@ function QuizContent() {
         topic: inputTopic,
         subtopic: selectedSubtopic || "General",
         question: q.question,
+        question_index: qIndex + 1,
         misconception: misconceptionText,
         // New: Pass complete question data for history storage
         question_options: {
@@ -250,13 +338,11 @@ function QuizContent() {
       setBloomLevel(res.next_bloom);
       setFeedback(res);
 
-      // 2. Schedule Review
       scheduleReview({
         topic_id: q.topic,
         quality: isCorrect ? 5 : 2
       }, api).catch(e => console.error("Failed to schedule review:", e));
 
-      // 3. Dynamic Explanation
       setExpLoading(true);
       setShowExplanation(true);
       const expRes = await getExplanation({
@@ -269,7 +355,7 @@ function QuizContent() {
 
     } catch (e) {
       console.error("Error submitting answer:", e);
-      setAiExplanation(q.explanation); // fallback
+      setAiExplanation(q.explanation);
       setAiDiagramUrl("");
     } finally {
       setIsSubmitting(false);
@@ -290,9 +376,265 @@ function QuizContent() {
     setShowSidebarDiagram(false);
     setFeedback(null);
     
-    // Fetch next dynamic question
     fetchNextQuestion(theta, [q.question]); 
   };
+
+  // ─── RESULTS SCREEN ───
+  if (quizState === 'results') {
+    const totalAnswered = questionHistory.length;
+    const totalCorrect = questionHistory.filter(r => r.correct).length;
+    const totalIncorrect = totalAnswered - totalCorrect;
+    const accuracyPct = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
+
+    // Concepts to focus on = specific concepts (from LLM) where user got questions wrong
+    const wrongRecords = questionHistory.filter(r => !r.correct);
+    const focusConcepts = Array.from(new Set(wrongRecords.map(r => r.concept)));
+    // Map each concept → its parent subtopic for display context
+    const conceptSubtopicMap: Record<string, string> = {};
+    wrongRecords.forEach(r => { if (!conceptSubtopicMap[r.concept]) conceptSubtopicMap[r.concept] = r.subtopic; });
+
+    // Bloom level distribution of wrong answers
+    const wrongBloomLevels = questionHistory
+      .filter(r => !r.correct)
+      .map(r => r.bloomLevel);
+    const uniqueWrongBlooms = Array.from(new Set(wrongBloomLevels));
+
+    const getPerformanceLabel = (pct: number) => {
+      if (pct >= 80) return { label: 'Excellent', color: '#059669', bg: '#ECFDF5' };
+      if (pct >= 60) return { label: 'Good', color: '#D97706', bg: '#FFFBEB' };
+      if (pct >= 40) return { label: 'Needs Practice', color: '#DC2626', bg: '#FEF2F2' };
+      return { label: 'Keep Studying', color: '#7C3AED', bg: '#F5F3FF' };
+    };
+
+    const perf = getPerformanceLabel(accuracyPct);
+
+    return (
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0F0C29 0%, #302B63 50%, #24243E 100%)', fontFamily: "'Inter', sans-serif", padding: '2rem 1rem' }}>
+        {/* Header */}
+        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+            <div style={{
+              width: '5rem', height: '5rem',
+              background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
+              borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 1.25rem',
+              boxShadow: '0 0 40px rgba(124, 58, 237, 0.5)',
+            }}>
+              <Trophy size={32} color="white" />
+            </div>
+            <h1 style={{ fontSize: '2rem', fontWeight: 800, color: 'white', marginBottom: '0.5rem', letterSpacing: '-0.02em' }}>Quiz Complete!</h1>
+            <p style={{ color: '#A5B4FC', fontSize: '1rem' }}>Topic: <strong style={{ color: 'white' }}>{inputTopic}</strong> · Subtopic: <strong style={{ color: 'white' }}>{selectedSubtopic || 'General'}</strong></p>
+          </div>
+
+          {/* Score Banner */}
+          <div style={{
+            background: perf.bg,
+            border: `2px solid ${perf.color}30`,
+            borderRadius: '16px',
+            padding: '1.75rem',
+            textAlign: 'center',
+            marginBottom: '1.5rem',
+            backdropFilter: 'blur(10px)',
+          }}>
+            <div style={{ fontSize: '4rem', fontWeight: 900, color: perf.color, lineHeight: 1 }}>{accuracyPct}%</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: perf.color, marginTop: '0.5rem' }}>{perf.label}</div>
+            <div style={{ fontSize: '0.9rem', color: '#6B7280', marginTop: '0.25rem' }}>{totalCorrect} correct out of {totalAnswered} questions</div>
+          </div>
+
+          {/* Stats Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+            {[
+              { icon: <CheckCircle size={22} color="#059669" />, label: 'Correct', value: totalCorrect, color: '#059669', bg: 'rgba(5,150,105,0.08)', border: 'rgba(5,150,105,0.25)' },
+              { icon: <XCircle size={22} color="#DC2626" />, label: 'Incorrect', value: totalIncorrect, color: '#DC2626', bg: 'rgba(220,38,38,0.08)', border: 'rgba(220,38,38,0.25)' },
+              { icon: <BarChart2 size={22} color="#7C3AED" />, label: 'Questions', value: totalAnswered, color: '#7C3AED', bg: 'rgba(124,58,237,0.08)', border: 'rgba(124,58,237,0.25)' },
+            ].map(stat => (
+              <div key={stat.label} style={{
+                background: stat.bg,
+                border: `1.5px solid ${stat.border}`,
+                borderRadius: '14px',
+                padding: '1.25rem',
+                textAlign: 'center',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '0.625rem' }}>{stat.icon}</div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, color: stat.color }}>{stat.value}</div>
+                <div style={{ fontSize: '0.8rem', color: '#9CA3AF', fontWeight: 500 }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Focus Areas */}
+          <div style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1.5px solid rgba(255,255,255,0.1)',
+            borderRadius: '16px',
+            padding: '1.5rem',
+            marginBottom: '1.5rem',
+            backdropFilter: 'blur(10px)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              <div style={{ width: '2.25rem', height: '2.25rem', background: 'rgba(239,68,68,0.15)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Target size={18} color="#EF4444" />
+              </div>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'white', margin: 0 }}>Concepts to Focus On</h2>
+            </div>
+
+            {focusConcepts.length === 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(5,150,105,0.12)', border: '1px solid rgba(5,150,105,0.3)', borderRadius: '10px', padding: '1rem' }}>
+                <CheckCircle size={20} color="#059669" />
+                <p style={{ color: '#6EE7B7', fontSize: '0.9rem', margin: 0, fontWeight: 500 }}>Amazing! You answered all questions correctly. Keep it up!</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                {focusConcepts.map((concept, i) => {
+                  const parentSubtopic = conceptSubtopicMap[concept] || selectedSubtopic || 'General';
+                  return (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: '0.875rem',
+                      background: 'rgba(239,68,68,0.08)',
+                      border: '1px solid rgba(239,68,68,0.2)',
+                      borderRadius: '10px',
+                      padding: '0.875rem 1rem',
+                    }}>
+                      <div style={{
+                        width: '1.75rem', height: '1.75rem', background: 'rgba(239,68,68,0.2)',
+                        borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.75rem', fontWeight: 700, color: '#FCA5A5', flexShrink: 0
+                      }}>{i + 1}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ color: 'white', fontWeight: 700, margin: 0, fontSize: '0.9rem' }}>{concept}</p>
+                        <p style={{ color: '#9CA3AF', fontSize: '0.72rem', margin: '0.15rem 0 0' }}>
+                          under <span style={{ color: '#A5B4FC' }}>{parentSubtopic}</span> · {inputTopic}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                        <AlertTriangle size={14} color="#FCA5A5" />
+                        <button
+                          onClick={() => handleStartConceptQuiz(concept)}
+                          style={{
+                            background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            padding: '0.4rem 0.75rem',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            boxShadow: '0 2px 8px rgba(124,58,237,0.35)',
+                            transition: 'opacity 0.15s ease',
+                          }}
+                          onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+                          onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                        >
+                          ▶ Give Quiz
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Bloom Level Weakness */}
+          {uniqueWrongBlooms.length > 0 && (
+            <div style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1.5px solid rgba(255,255,255,0.1)',
+              borderRadius: '16px',
+              padding: '1.5rem',
+              marginBottom: '1.5rem',
+              backdropFilter: 'blur(10px)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div style={{ width: '2.25rem', height: '2.25rem', background: 'rgba(124,58,237,0.15)', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Brain size={18} color="#A78BFA" />
+                </div>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'white', margin: 0 }}>Cognitive Gap Areas</h2>
+              </div>
+              <p style={{ color: '#9CA3AF', fontSize: '0.85rem', marginBottom: '0.875rem' }}>These Bloom's Taxonomy levels need more attention:</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {uniqueWrongBlooms.map((bloom, i) => (
+                  <span key={i} style={{
+                    background: 'rgba(124,58,237,0.15)',
+                    border: '1px solid rgba(124,58,237,0.3)',
+                    color: '#C4B5FD',
+                    padding: '0.4rem 0.875rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                  }}>{bloom}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Question Breakdown */}
+          <div style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1.5px solid rgba(255,255,255,0.1)',
+            borderRadius: '16px',
+            padding: '1.5rem',
+            marginBottom: '2rem',
+            backdropFilter: 'blur(10px)',
+          }}>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'white', marginBottom: '1rem' }}>Question Breakdown</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '280px', overflowY: 'auto' }}>
+              {questionHistory.map((record, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: '0.75rem',
+                  background: record.correct ? 'rgba(5,150,105,0.07)' : 'rgba(220,38,38,0.07)',
+                  border: `1px solid ${record.correct ? 'rgba(5,150,105,0.2)' : 'rgba(220,38,38,0.2)'}`,
+                  borderRadius: '8px',
+                  padding: '0.75rem',
+                }}>
+                  <div style={{
+                    width: '1.625rem', height: '1.625rem', background: record.correct ? 'rgba(5,150,105,0.2)' : 'rgba(220,38,38,0.2)',
+                    borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.7rem', fontWeight: 700, color: record.correct ? '#6EE7B7' : '#FCA5A5', flexShrink: 0,
+                  }}>Q{i + 1}</div>
+                  <p style={{ color: '#D1D5DB', fontSize: '0.8rem', margin: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.question}</p>
+                  {record.correct
+                    ? <CheckCircle size={16} color="#059669" style={{ flexShrink: 0 }} />
+                    : <XCircle size={16} color="#DC2626" style={{ flexShrink: 0 }} />
+                  }
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button
+              onClick={handleRestartQuiz}
+              style={{
+                flex: 1, background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
+                color: 'white', border: 'none', borderRadius: '12px',
+                padding: '1rem', fontWeight: 700, fontSize: '1rem',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+              }}
+            >
+              <RotateCcw size={18} /> Try Again
+            </button>
+            <Link href="/dashboard" style={{
+              flex: 1, background: 'rgba(255,255,255,0.08)',
+              color: 'white', border: '1.5px solid rgba(255,255,255,0.15)', borderRadius: '12px',
+              padding: '1rem', fontWeight: 700, fontSize: '1rem',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+              textDecoration: 'none',
+            }}>
+              <Home size={18} /> Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleEndQuiz = () => {
     if (window.confirm("Are you sure you want to end the quiz? Your final score and estimated ability level will be saved.")) {
@@ -501,6 +843,7 @@ function QuizContent() {
   }
 
   const timerColor = timer > 20 ? '#059669' : timer > 10 ? '#D97706' : '#DC2626';
+  const canEndTest = qIndex >= 9; // After 10 questions (0-indexed: question 10 means index 9+)
 
   return (
     <div style={{ minHeight: '100vh', background: '#F9FAFB', fontFamily: "'Inter', sans-serif" }}>
@@ -519,6 +862,27 @@ function QuizContent() {
           <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#7C3AED', whiteSpace: 'nowrap' }}>
             Continuous Learning
           </span>
+          {/* End Test button — enabled only after 10 questions */}
+          <button
+            onClick={handleEndTest}
+            disabled={!canEndTest}
+            title={canEndTest ? 'End test and see results' : `Complete at least ${10 - (qIndex + 1) + (submitted ? 1 : 0)} more question(s) to end`}
+            style={{
+              background: canEndTest ? '#DC2626' : '#E5E7EB',
+              color: canEndTest ? 'white' : '#9CA3AF',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '0.45rem 0.9rem',
+              fontSize: '0.8125rem',
+              fontWeight: 700,
+              cursor: canEndTest ? 'pointer' : 'not-allowed',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.2s ease',
+              boxShadow: canEndTest ? '0 2px 8px rgba(220,38,38,0.3)' : 'none',
+            }}
+          >
+            {canEndTest ? '🏁 End Test' : `End Test (${Math.max(0, 10 - (qIndex + 1))} more)`}
+          </button>
         </div>
       </div>
 

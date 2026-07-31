@@ -11,15 +11,20 @@ class ThetaEstimator:
         return 1 / (1 + math.exp(-(theta - difficulty)))
 
     @staticmethod
-    def update_theta(theta: float, correct: bool, difficulty: float) -> float:
-        """Simple EAP-style theta update after each response."""
+    def update_theta(theta: float, correct: bool, difficulty: float, question_index: int = 1) -> float:
+        """EAP-style theta update with decreasing standard error over time."""
+        # Ensure question_index is at least 1 to avoid division by zero
+        q_num = max(1, question_index)
+        
+        # Base learning rate that decays as confidence increases
+        learning_rate = 0.4 / math.sqrt(q_num)
+        
         p = ThetaEstimator.irt_probability(theta, difficulty)
-        learning_rate = 0.3
         if correct:
             theta += learning_rate * (1 - p)
         else:
             theta -= learning_rate * p
-        return round(max(-3.0, min(3.0, theta)), 4)  # clamp to [-3, 3]
+        return round(max(-3.0, min(3.0, theta)), 4)   
 
     @staticmethod
     def select_next_difficulty(theta: float) -> float:

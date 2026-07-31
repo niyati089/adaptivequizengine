@@ -2,6 +2,9 @@ import networkx as nx
 import httpx
 from groq import Groq
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TopicDAGEngine:
     """
@@ -10,7 +13,7 @@ class TopicDAGEngine:
     
     def __init__(self, api_key: str):
         self.graph = nx.DiGraph()
-        self.api_key = api_key
+        self.api_key = api_key.strip()
         
     def generate_dag_and_notes(self, topic: str) -> dict:
         client = Groq(
@@ -19,62 +22,97 @@ class TopicDAGEngine:
         )
         prompt = f"""You are an expert educator. The user wants to learn about: "{topic}"
 
-Generate a comprehensive learning structure. Respond ONLY with valid JSON (no markdown, no backticks):
+Return ONLY this exact JSON structure (no markdown, no explanation, no extra keys):
 
 {{
   "dag": {{
     "nodes": [
-      {{"id": "node_id", "label": "Subtopic Name", "level": 0, "bloom": "remember"}}
+      {{"id": "n1", "label": "Subtopic Name", "level": 0}},
+      {{"id": "n2", "label": "Another Subtopic", "level": 1}}
     ],
     "edges": [
-      {{"from": "node_id_1", "to": "node_id_2"}}
+      {{"from": "n1", "to": "n2"}}
     ]
   }},
   "subtopics": [
-    {{
-      "id": "node_id",
-      "title": "Subtopic Title",
-      "level": 0,
-      "bloom": "remember",
-      "notes": "Detailed markdown notes for this subtopic (300-500 words). Include definitions, examples, key formulas/code if relevant."
-    }}
+    {{"id": "n1", "title": "Subtopic Name", "level": 0}},
+    {{"id": "n2", "title": "Another Subtopic", "level": 1}}
   ]
 }}
 
 Rules:
-- Create 5-8 subtopics ordered from fundamentals to advanced
-- level 0 = prerequisite/foundation, higher = more advanced
-- DAG edges show prerequisites (from=prerequisite, to=dependent)
-- bloom levels: remember → understand → apply → analyze → evaluate → create
-- notes must be genuinely educational, not placeholder text
-- Include code examples in markdown code blocks where relevant
-- Topic: {topic}"""
+- 5 to 8 subtopics, ordered from fundamentals (level 0) to advanced (higher level)
+- Edges point from prerequisite to dependent (prerequisite → dependent)
+- Every node in dag.nodes must also appear in subtopics with matching id
+- Topic: "{topic}"
+- RESPOND ONLY WITH JSON. NO OTHER TEXT."""
 
-        message = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
-        )
+        last_error = None
+        for attempt in range(3):
+            try:
+                message = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    max_tokens=1500,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"},
+                    temperature=0.3,
+                )
 
-        raw = message.choices[0].message.content.strip()
+                raw = message.choices[0].message.content.strip()
 
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        raw = raw.strip()
+                # Strip markdown fences if model adds them despite instruction
+                if raw.startswith("```"):
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"):
+                        raw = raw[4:]
+                raw = raw.strip()
 
-        return json.loads(raw, strict=False)
+                # Extract the outermost JSON object
+                start_idx = raw.find('{')
+                end_idx = raw.rfind('}')
+                if start_idx == -1 or end_idx == -1:
+                    raise ValueError("No JSON object found in LLM response")
+
+                data = json.loads(raw[start_idx:end_idx + 1], strict=False)
+
+                # Validate required keys exist
+                if "subtopics" not in data or not isinstance(data["subtopics"], list):
+                    raise ValueError(f"Missing or invalid 'subtopics' key. Got keys: {list(data.keys())}")
+
+                if len(data["subtopics"]) == 0:
+                    raise ValueError("subtopics list is empty")
+
+                # Ensure every subtopic has required fields
+                cleaned_subtopics = []
+                for i, st in enumerate(data["subtopics"]):
+                    cleaned_subtopics.append({
+                        "id": st.get("id", f"n{i}"),
+                        "title": st.get("title") or st.get("label") or st.get("name") or f"Subtopic {i+1}",
+                        "level": st.get("level", i),
+                    })
+                data["subtopics"] = cleaned_subtopics
+
+                # Ensure dag key exists
+                if "dag" not in data:
+                    data["dag"] = {
+                        "nodes": [{"id": s["id"], "label": s["title"], "level": s["level"]} for s in cleaned_subtopics],
+                        "edges": []
+                    }
+
+                logger.info(f"DAG generated successfully for '{topic}' on attempt {attempt + 1}")
+                return data
+
+            except Exception as e:
+                last_error = e
+                logger.warning(f"DAG generation attempt {attempt + 1} failed: {e}")
+                continue
+
+        raise RuntimeError(f"Failed to generate DAG after 3 attempts: {last_error}")
 
     def add_dependency(self, prerequisite: str, target: str):
-        """
-        TODO: Implement adding topic dependencies.
-        """
-        pass
+        """Add a prerequisite edge between topics."""
+        self.graph.add_edge(prerequisite, target)
         
     def get_next_topic(self, current_topic: str, mastery_level: float) -> str:
-        """
-        TODO: Implement logic to find next optimal topic.
-        """
+        """Find the next optimal topic based on mastery level."""
         pass

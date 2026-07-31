@@ -19,6 +19,7 @@ export interface AnswerRequest {
   topic: string;
   subtopic: string;
   question: string;
+  question_index: number;
   misconception?: string | null;
   // New fields for complete question data storage
   question_options?: Record<string, string>;
