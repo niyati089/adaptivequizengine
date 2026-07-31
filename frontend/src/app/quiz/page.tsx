@@ -61,6 +61,8 @@ function QuizContent() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [expLoading, setExpLoading] = useState(false);
   const [aiExplanation, setAiExplanation] = useState("");
+  const [aiDiagramUrl, setAiDiagramUrl] = useState("");
+  const [showSidebarDiagram, setShowSidebarDiagram] = useState(false);
 
   const [enableAntiCheating, setEnableAntiCheating] = useState(true);
   const [genError, setGenError] = useState<string | null>(null);
@@ -253,10 +255,12 @@ function QuizContent() {
         difficulty: "Adaptive"
       });
       setAiExplanation(expRes.explanation || q.explanation);
+      setAiDiagramUrl(expRes.diagram_url || "");
 
     } catch (e) {
       console.error("Error submitting answer:", e);
       setAiExplanation(q.explanation); // fallback
+      setAiDiagramUrl("");
     } finally {
       setIsSubmitting(false);
       setExpLoading(false);
@@ -272,6 +276,8 @@ function QuizContent() {
     setAiHint("");
     setShowExplanation(false);
     setAiExplanation("");
+    setAiDiagramUrl("");
+    setShowSidebarDiagram(false);
     setFeedback(null);
     
     // Fetch next dynamic question
@@ -653,7 +659,31 @@ function QuizContent() {
                   <span style={{ fontSize: '0.875rem' }}>AI is analyzing...</span>
                 </div>
               ) : (
-                <p style={{ fontSize: '0.9375rem', color: (feedback?.correct || selected === q.correct) ? '#047857' : '#991B1B', lineHeight: 1.65, margin: 0 }}>{aiExplanation || q.explanation}</p>
+                <>
+                  <p style={{ fontSize: '0.9375rem', color: (feedback?.correct || selected === q.correct) ? '#047857' : '#991B1B', lineHeight: 1.65, margin: 0 }}>{aiExplanation || q.explanation}</p>
+                  {aiDiagramUrl && (
+                    <button
+                      onClick={() => setShowSidebarDiagram(true)}
+                      style={{
+                        marginTop: '1rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        background: '#EDE9FE',
+                        border: '1px solid #C084FC',
+                        borderRadius: '8px',
+                        padding: '0.4rem 0.8rem',
+                        fontSize: '0.8125rem',
+                        fontWeight: 600,
+                        color: '#6B21A8',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      🖼️ View Concept Diagram
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -662,58 +692,77 @@ function QuizContent() {
         {/* Right: Sidebar */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', position: 'sticky', top: '5rem' }}>
 
-          {/* Socratic hint */}
-          <div className="card" style={{ border: '1.5px solid #FEF3C7', padding: '1.25rem', background: 'white', borderRadius: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.875rem' }}>
-              <div style={{ width: '2rem', height: '2rem', background: '#FEF3C7', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Lightbulb size={16} color="#D97706" />
-              </div>
-              <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#111827' }}>Socratic Hint</span>
-            </div>
-
-            {showHint ? (
-              hintLoading ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#92400E' }}>
-                  <Loader2 size={16} className="animate-spin" />
-                  <span style={{ fontSize: '0.875rem' }}>AI is thinking...</span>
-                </div>
-              ) : (
-                <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.65, margin: 0 }}>{aiHint}</p>
-              )
-            ) : (
-              <div>
-                <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: '0.75rem', lineHeight: 1.6 }}>
-                  Stuck? Get a guided question from our AI tutor — without giving away the answer.
-                </p>
-                <button onClick={handleRevealHint}
-                  style={{ background: '#FEF3C7', color: '#92400E', border: 'none', borderRadius: '8px', padding: '0.5rem 1rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', width: '100%' }}>
-                  Reveal Hint
+          {showSidebarDiagram && aiDiagramUrl ? (
+            <div className="card" style={{ border: '1.5px solid #E5E7EB', padding: '1.25rem', background: 'white', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #F3F4F6', paddingBottom: '0.5rem' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#111827' }}>Visual Explanation</span>
+                <button 
+                  onClick={() => setShowSidebarDiagram(false)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: '1.5rem', lineHeight: '1rem', fontWeight: 'bold' }}
+                >
+                  ×
                 </button>
               </div>
-            )}
-          </div>
-
-          {/* Session signals */}
-          <div className="card" style={{ padding: '1.25rem', background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <BarChart2 size={18} color="#7C3AED" />
-              <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#111827' }}>Session Signals</span>
+              <div style={{ display: 'flex', justifyContent: 'center', background: '#F9FAFB', borderRadius: '8px', padding: '0.75rem', border: '1px dashed #E5E7EB' }}>
+                <img src={aiDiagramUrl} alt="Visual Explanation Diagram" style={{ maxWidth: '100%', height: 'auto', borderRadius: '4px' }} />
+              </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-              {[
-                { label: 'Ability (θ)', value: theta.toFixed(2), note: `Difficulty: ${difficulty.toFixed(2)}`, color: '#059669' },
-                { label: 'System Mode', value: 'Dynamic IRT', note: `Bloom: ${bloomLevel}`, color: '#7C3AED' },
-              ].map(sig => (
-                <div key={sig.label}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-                    <span style={{ fontSize: '0.8125rem', color: '#6B7280', fontWeight: 500 }}>{sig.label}</span>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 700, color: sig.color }}>{sig.value}</span>
+          ) : (
+            <>
+              {/* Socratic hint */}
+              <div className="card" style={{ border: '1.5px solid #FEF3C7', padding: '1.25rem', background: 'white', borderRadius: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.875rem' }}>
+                  <div style={{ width: '2rem', height: '2rem', background: '#FEF3C7', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Lightbulb size={16} color="#D97706" />
                   </div>
-                  <p style={{ fontSize: '0.75rem', color: '#9CA3AF', margin: 0 }}>{sig.note}</p>
+                  <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#111827' }}>Socratic Hint</span>
                 </div>
-              ))}
-            </div>
-          </div>
+
+                {showHint ? (
+                  hintLoading ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#92400E' }}>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span style={{ fontSize: '0.875rem' }}>AI is thinking...</span>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: 1.65, margin: 0 }}>{aiHint}</p>
+                  )
+                ) : (
+                  <div>
+                    <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: '0.75rem', lineHeight: 1.6 }}>
+                      Stuck? Get a guided question from our AI tutor — without giving away the answer.
+                    </p>
+                    <button onClick={handleRevealHint}
+                      style={{ background: '#FEF3C7', color: '#92400E', border: 'none', borderRadius: '8px', padding: '0.5rem 1rem', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', width: '100%' }}>
+                      Reveal Hint
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Session signals */}
+              <div className="card" style={{ padding: '1.25rem', background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                  <BarChart2 size={18} color="#7C3AED" />
+                  <span style={{ fontWeight: 700, fontSize: '0.9375rem', color: '#111827' }}>Session Signals</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+                  {[
+                    { label: 'Ability (θ)', value: theta.toFixed(2), note: `Difficulty: ${difficulty.toFixed(2)}`, color: '#059669' },
+                    { label: 'System Mode', value: 'Dynamic IRT', note: `Bloom: ${bloomLevel}`, color: '#7C3AED' },
+                  ].map(sig => (
+                    <div key={sig.label}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                        <span style={{ fontSize: '0.8125rem', color: '#6B7280', fontWeight: 500 }}>{sig.label}</span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: 700, color: sig.color }}>{sig.value}</span>
+                      </div>
+                      <p style={{ fontSize: '0.75rem', color: '#9CA3AF', margin: 0 }}>{sig.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* AI Proctoring Card */}
           <div className="card" style={{ padding: '1.25rem', background: 'white', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: proctoring.violations.total > 0 ? '1.5px solid #FCA5A5' : '1px solid #E5E7EB' }}>

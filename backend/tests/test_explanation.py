@@ -11,5 +11,7 @@ def test_explanation_route(client, mock_groq_client):
     data = response.json()
     assert "explanation" in data
     assert "key_takeaway" in data
+    assert "diagram_url" in data
     assert data["explanation"] == "Mocked explanation"
     assert data["key_takeaway"] == "Mocked takeaway"
+    assert data["diagram_url"] is None

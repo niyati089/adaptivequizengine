@@ -6,7 +6,6 @@ class ExplanationService:
         self.agent = ExplanationAgent()
 
     async def get_explanation(self, request: ExplanationRequest) -> ExplanationResponse:
-        # TODO: Add additional business logic if needed (e.g., fetching learner profile to adjust difficulty dynamically)
         result = await self.agent.generate_explanation(
             question=request.question,
             correct_answer=request.correct_answer,
@@ -15,5 +14,6 @@ class ExplanationService:
         
         return ExplanationResponse(
             explanation=result.get("explanation", "No explanation available."),
-            key_takeaway=result.get("key_takeaway", "No takeaway available.")
+            key_takeaway=result.get("key_takeaway", "No takeaway available."),
+            diagram_url=result.get("diagram_url")
         )
