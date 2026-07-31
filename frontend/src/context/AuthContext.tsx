@@ -44,6 +44,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const storedToken = localStorage.getItem('auth_token');
     const storedUser = localStorage.getItem('auth_user');
 
+    console.log('[AuthContext] Initializing - token exists:', !!storedToken, 'user exists:', !!storedUser);
+
     if (storedToken && storedUser) {
       try {
         setToken(storedToken);
@@ -52,7 +54,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Configure axios interceptor for this token
         apiInstance.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+        console.log('[AuthContext] Token set in axios instance');
       } catch (e) {
+        console.error('[AuthContext] Error parsing stored user:', e);
         // Clear corrupt state
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
@@ -67,15 +71,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response = await apiInstance.post('/users/login', { email, password });
       const { access_token, role, name, id } = response.data;
 
+      console.log('[AuthContext] Login successful, token received:', access_token.substring(0, 20) + '...');
+
       const newUser: User = { id, name, email, role };
       
       localStorage.setItem('auth_token', access_token);
       localStorage.setItem('auth_user', JSON.stringify(newUser));
 
+      console.log('[AuthContext] Token stored in localStorage');
+
       setToken(access_token);
       setUser(newUser);
       
       apiInstance.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+      console.log('[AuthContext] Authorization header set in apiInstance');
 
       // Redirect based on role
       if (role === 'teacher') {
@@ -84,6 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         router.push('/dashboard');
       }
     } catch (error) {
+      console.error('[AuthContext] Login failed:', error);
       setIsLoading(false);
       throw error;
     } finally {

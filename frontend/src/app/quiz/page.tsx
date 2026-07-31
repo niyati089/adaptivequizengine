@@ -14,7 +14,7 @@ import { WarningModal } from '@/components/quiz/WarningModal';
 
 
 function QuizContent() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, api } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedTopic = searchParams.get('topic') || "Computer Science";
@@ -104,6 +104,7 @@ function QuizContent() {
     setIsGenLoading(true);
     setGenError(null);
     try {
+      console.log('[Quiz] Calling generateQuestion with token:', !!api?.defaults?.headers?.common?.Authorization);
       const data = await generateQuestion({
         topic: inputTopic,
         subtopic: selectedSubtopic || "General",
@@ -112,7 +113,7 @@ function QuizContent() {
         previous_questions: prevQuestions,
         enable_anti_cheating: enableAntiCheating,
         session_id: sessionId,  // Fix 2: backend verifies lock status before serving question
-      });
+      }, api);
       setQ({
         question: data.question,
         options: [data.options.A, data.options.B, data.options.C, data.options.D],
@@ -150,7 +151,7 @@ function QuizContent() {
     if (!inputTopic.trim()) return;
     setIsLoadingDag(true);
     try {
-      const data = await generateTopicDag(inputTopic);
+      const data = await generateTopicDag(inputTopic, api);
       let parsedSubtopics = data.subtopics;
       if (!parsedSubtopics && data.dag && data.dag.nodes) {
         parsedSubtopics = data.dag.nodes.map((n: any) => ({
@@ -201,7 +202,7 @@ function QuizContent() {
         user_answer: selected !== null ? q.options[selected] : "I don't know",
         correct_answer: q.options[q.correct],
         confidence: 3
-      });
+      }, api);
       setAiHint(res.hint || q.hint);
     } catch (e) {
       console.error("Failed to fetch Socratic hint:", e);
@@ -233,8 +234,17 @@ function QuizContent() {
         topic: inputTopic,
         subtopic: selectedSubtopic || "General",
         question: q.question,
-        misconception: misconceptionText
-      });
+        misconception: misconceptionText,
+        // New: Pass complete question data for history storage
+        question_options: {
+          A: q.options[0],
+          B: q.options[1],
+          C: q.options[2],
+          D: q.options[3]
+        },
+        explanation: q.explanation,
+        bloom_level: bloomLevel
+      }, api);
       
       setTheta(res.new_theta);
       setBloomLevel(res.next_bloom);
@@ -244,7 +254,7 @@ function QuizContent() {
       scheduleReview({
         topic_id: q.topic,
         quality: isCorrect ? 5 : 2
-      }).catch(e => console.error("Failed to schedule review:", e));
+      }, api).catch(e => console.error("Failed to schedule review:", e));
 
       // 3. Dynamic Explanation
       setExpLoading(true);
@@ -253,7 +263,7 @@ function QuizContent() {
         question: q.question,
         correct_answer: q.options[q.correct],
         difficulty: "Adaptive"
-      });
+      }, api);
       setAiExplanation(expRes.explanation || q.explanation);
       setAiDiagramUrl(expRes.diagram_url || "");
 

@@ -62,9 +62,14 @@ export default function DashboardPage() {
             </h1>
             <p style={{ fontSize: '0.9375rem', color: '#6B7280' }}>Track your adaptive learning progress across all topics.</p>
           </div>
-          <Link href="/quiz?topic=Mathematics" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
-            Start Today's Quiz <ChevronRight size={16} />
-          </Link>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Link href="/quiz-history" className="btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.25rem', background: 'white', color: '#7C3AED', border: '1.5px solid #E5E7EB', borderRadius: '8px', textDecoration: 'none', fontWeight: 600, fontSize: '0.9375rem' }}>
+              📋 Quiz History
+            </Link>
+            <Link href="/quiz?topic=Mathematics" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+              Start Today's Quiz <ChevronRight size={16} />
+            </Link>
+          </div>
         </div>
 
         {/* ─── KPI CARDS ─── */}

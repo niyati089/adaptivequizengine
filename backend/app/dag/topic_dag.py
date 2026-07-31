@@ -1,4 +1,5 @@
 import networkx as nx
+import httpx
 from groq import Groq
 import json
 
@@ -12,7 +13,10 @@ class TopicDAGEngine:
         self.api_key = api_key
         
     def generate_dag_and_notes(self, topic: str) -> dict:
-        client = Groq(api_key=self.api_key)
+        client = Groq(
+            api_key=self.api_key,
+            http_client=httpx.Client(verify=False)
+        )
         prompt = f"""You are an expert educator. The user wants to learn about: "{topic}"
 
 Generate a comprehensive learning structure. Respond ONLY with valid JSON (no markdown, no backticks):

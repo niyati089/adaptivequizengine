@@ -4,13 +4,21 @@ from typing import Optional
 from groq import Groq
 import os
 import json
+import certifi
 from sqlalchemy.orm import Session
+from sqlalchemy import text, inspect
 from app.database.session import get_db
+from app.database.connection import engine
 from app.irt.theta_estimator import ThetaEstimator
 from app.models.user import User
 from app.api.endpoints.users import get_current_student, oauth2_scheme
 from app.models.proctoring_event import ProctoringEvent
 from app.models.attempt import QuestionAttempt
+
+# Set SSL certificate path for Windows
+if not os.environ.get('SSL_CERT_FILE'):
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
 
 router = APIRouter()
 
@@ -40,6 +48,10 @@ class AnswerRequest(BaseModel):
     question: str
     misconception: Optional[str] = None
     api_key: Optional[str] = None
+    # New fields for complete question data
+    question_options: Optional[dict] = None  # {A: "...", B: "...", C: "...", D: "..."}
+    explanation: Optional[str] = None
+    bloom_level: Optional[str] = None
 
 
 def _check_session_locked(session_id: str, db: Session) -> bool:
@@ -78,7 +90,12 @@ async def generate_question(
     if not api_key:
         raise HTTPException(status_code=400, detail="API key required")
 
-    client = Groq(api_key=api_key)
+    import httpx
+    # Disable SSL verification for development (Windows certificate issues)
+    client = Groq(
+        api_key=api_key,
+        http_client=httpx.Client(verify=False)
+    )
     difficulty_label = ThetaEstimator.theta_to_label(req.difficulty)
     avoid = "\n".join(f"- {q}" for q in req.previous_questions[-5:]) if req.previous_questions else "None"
 
@@ -148,7 +165,10 @@ Calibration guide:
         from groq import AsyncGroq
         agent = QuestionGenerationAgent()
         if api_key:
-            agent.client = AsyncGroq(api_key=api_key)
+            agent.client = AsyncGroq(
+                api_key=api_key,
+                http_client=httpx.AsyncClient(verify=False)
+            )
         variant_data = await agent.generate_variant(data)
         return variant_data
 
@@ -209,6 +229,26 @@ async def submit_answer(
             db.refresh(first_student)
         user_id = first_student.id
 
+    # Log the incoming data for debugging
+    print("=" * 70)
+    print("📝 QUIZ SUBMISSION RECEIVED")
+    print("=" * 70)
+    print(f"User ID: {user_id}")
+    print(f"Topic: {req.topic}")
+    print(f"Subtopic: {req.subtopic}")
+    print(f"Question: {req.question[:80]}...")
+    print(f"Selected: {req.selected_option} | Correct: {req.correct_answer}")
+    print(f"Theta: {req.theta} → {new_theta}")
+    print("\n📦 QUIZ HISTORY FIELDS:")
+    print(f"  • question_options: {type(req.question_options)} - {req.question_options is not None}")
+    if req.question_options:
+        print(f"    Keys: {list(req.question_options.keys())}")
+    print(f"  • explanation: {type(req.explanation)} - {req.explanation is not None}")
+    if req.explanation:
+        print(f"    Length: {len(req.explanation)} chars")
+    print(f"  • bloom_level: {type(req.bloom_level)} - {req.bloom_level}")
+    print("=" * 70)
+
     # Record the attempt in the database
     attempt = QuestionAttempt(
         user_id=user_id,
@@ -220,10 +260,15 @@ async def submit_answer(
         is_correct=correct,
         misconception=req.misconception if not correct else None,
         theta_before=req.theta,
-        theta_after=new_theta
+        theta_after=new_theta,
+        question_options=req.question_options,  # Store options for history display
+        explanation=req.explanation,  # Store explanation for review
+        bloom_level=req.bloom_level  # Store Bloom's level for analysis
     )
     db.add(attempt)
     db.commit()
+    
+    print(f"✓ Saved attempt #{attempt.id} to database")
 
     return {
         "correct": correct,
@@ -233,3 +278,153 @@ async def submit_answer(
         "next_bloom": bloom_order[next_bloom_idx],
         "probability_correct": round(ThetaEstimator.irt_probability(req.theta, req.difficulty), 3),
     }
+
+
+@router.get("/history")
+async def get_quiz_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_student)
+):
+    """
+    Retrieves complete quiz history for the current user, organized by topic and subtopic.
+    """
+    print("\n" + "=" * 70)
+    print("📊 QUIZ HISTORY REQUEST")
+    print("=" * 70)
+    print(f"User ID: {current_user.id}")
+    print(f"User: {current_user.name} ({current_user.email})")
+    
+    attempts = db.query(QuestionAttempt).filter(
+        QuestionAttempt.user_id == current_user.id
+    ).order_by(QuestionAttempt.timestamp.desc()).all()
+    
+    print(f"Found {len(attempts)} attempts")
+    
+    if not attempts:
+        print("⚠ No quiz attempts found for this user")
+        return {
+            "user_id": current_user.id,
+            "user_name": current_user.name,
+            "total_attempts": 0,
+            "history": {}
+        }
+    
+    # Organize by topic -> subtopic
+    history_dict = {}
+    
+    for attempt in attempts:
+        if attempt.topic not in history_dict:
+            history_dict[attempt.topic] = {
+                "subtopics": {},
+                "stats": {
+                    "total_questions": 0,
+                    "correct": 0,
+                    "accuracy": 0.0
+                }
+            }
+        
+        if attempt.subtopic not in history_dict[attempt.topic]["subtopics"]:
+            history_dict[attempt.topic]["subtopics"][attempt.subtopic] = {
+                "questions": [],
+                "stats": {
+                    "total": 0,
+                    "correct": 0,
+                    "accuracy": 0.0
+                }
+            }
+        
+        # Add attempt details
+        question_data = {
+            "id": attempt.id,
+            "question_text": attempt.question_text,
+            "options": attempt.question_options or {},
+            "selected_option": attempt.selected_option,
+            "correct_option": attempt.correct_option,
+            "is_correct": attempt.is_correct,
+            "explanation": attempt.explanation,
+            "misconception": attempt.misconception,
+            "theta_before": attempt.theta_before,
+            "theta_after": attempt.theta_after,
+            "bloom_level": attempt.bloom_level,
+            "timestamp": attempt.timestamp.isoformat() if attempt.timestamp else None
+        }
+        
+        history_dict[attempt.topic]["subtopics"][attempt.subtopic]["questions"].append(question_data)
+    
+    # Calculate statistics for each subtopic and topic
+    for topic, topic_data in history_dict.items():
+        total_q = 0
+        correct_q = 0
+        
+        for subtopic, subtopic_data in topic_data["subtopics"].items():
+            total = len(subtopic_data["questions"])
+            correct = sum(1 for q in subtopic_data["questions"] if q["is_correct"])
+            
+            subtopic_data["stats"]["total"] = total
+            subtopic_data["stats"]["correct"] = correct
+            subtopic_data["stats"]["accuracy"] = (correct / total * 100) if total > 0 else 0.0
+            
+            total_q += total
+            correct_q += correct
+        
+        topic_data["stats"]["total_questions"] = total_q
+        topic_data["stats"]["correct"] = correct_q
+        topic_data["stats"]["accuracy"] = (correct_q / total_q * 100) if total_q > 0 else 0.0
+    
+    # Log summary
+    print("\n📈 HISTORY SUMMARY:")
+    print(f"  Topics: {len(history_dict)}")
+    for topic, data in history_dict.items():
+        print(f"    • {topic}: {data['stats']['total_questions']} questions, {data['stats']['accuracy']:.1f}% accuracy")
+    
+    response = {
+        "user_id": current_user.id,
+        "user_name": current_user.name,
+        "total_attempts": len(attempts),
+        "history": history_dict
+    }
+    
+    print("✓ Returning quiz history")
+    print("=" * 70 + "\n")
+    
+    return response
+
+
+@router.post("/init-schema")
+async def initialize_schema(db: Session = Depends(get_db)):
+    """
+    Initialize database schema for quiz history if needed.
+    Adds missing columns to question_attempts table.
+    """
+    try:
+        inspector = inspect(engine)
+        columns = inspector.get_columns('question_attempts')
+        existing_columns = {col['name'] for col in columns}
+        
+        result = {
+            "status": "ok",
+            "existing_columns": list(existing_columns),
+            "added_columns": []
+        }
+        
+        # Check and add missing columns
+        migrations = [
+            ('question_options', 'ALTER TABLE question_attempts ADD COLUMN question_options JSONB'),
+            ('explanation', 'ALTER TABLE question_attempts ADD COLUMN explanation TEXT'),
+            ('bloom_level', 'ALTER TABLE question_attempts ADD COLUMN bloom_level VARCHAR(50)')
+        ]
+        
+        with engine.begin() as connection:
+            for col_name, sql in migrations:
+                if col_name not in existing_columns:
+                    try:
+                        connection.execute(text(sql))
+                        result["added_columns"].append(col_name)
+                    except Exception as e:
+                        if 'already exists' not in str(e).lower():
+                            result["warning"] = f"Error adding {col_name}: {str(e)}"
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Schema initialization failed: {str(e)}")

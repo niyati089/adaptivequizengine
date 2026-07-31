@@ -1,4 +1,5 @@
-import { api } from './api';
+// Import auth context to get the properly configured API instance
+import { useAuth } from '@/context/AuthContext';
 
 export interface QuestionRequest {
   topic: string;
@@ -19,15 +20,32 @@ export interface AnswerRequest {
   subtopic: string;
   question: string;
   misconception?: string | null;
+  // New fields for complete question data storage
+  question_options?: Record<string, string>;
+  explanation?: string;
+  bloom_level?: string;
 }
 
-export const generateQuestion = async (params: QuestionRequest) => {
-  const response = await api.post('/quiz/generate', params);
+// Helper to get the API instance from context (this will be called from components)
+const getAuthenticatedApi = () => {
+  // This will be injected by the calling component via useAuth hook
+  return null; // Will be replaced by the component
+};
+
+export const generateQuestion = async (params: QuestionRequest, apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  console.log('[quizService] generateQuestion - Authorization header:', apiInstance.defaults.headers.common.Authorization?.substring(0, 30) + '...');
+  const response = await apiInstance.post('/quiz/generate', params);
   return response.data;
 };
 
-export const submitAnswer = async (params: AnswerRequest) => {
-  const response = await api.post('/quiz/submit', params);
+export const submitAnswer = async (params: AnswerRequest, apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  const response = await apiInstance.post('/quiz/submit', params);
   return response.data;
 };
 
@@ -38,8 +56,11 @@ export interface SocraticRequest {
   confidence: number;
 }
 
-export const getSocraticHint = async (params: SocraticRequest) => {
-  const response = await api.post('/socratic/', params);
+export const getSocraticHint = async (params: SocraticRequest, apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  const response = await apiInstance.post('/socratic/', params);
   return response.data;
 };
 
@@ -49,8 +70,11 @@ export interface ExplanationRequest {
   difficulty: string;
 }
 
-export const getExplanation = async (params: ExplanationRequest) => {
-  const response = await api.post('/explanation/', params);
+export const getExplanation = async (params: ExplanationRequest, apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  const response = await apiInstance.post('/explanation/', params);
   return response.data;
 };
 
@@ -59,22 +83,42 @@ export interface ReviewRequest {
   quality: number;
 }
 
-export const scheduleReview = async (params: ReviewRequest) => {
-  const response = await api.post('/review/schedule', params);
+export const scheduleReview = async (params: ReviewRequest, apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  const response = await apiInstance.post('/review/schedule', params);
   return response.data;
 };
 
-export const generateTopicDag = async (topic: string) => {
-  const response = await api.get(`/dag/generate?topic=${encodeURIComponent(topic)}`);
+export const generateTopicDag = async (topic: string, apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  const response = await apiInstance.get(`/dag/generate?topic=${encodeURIComponent(topic)}`);
   return response.data;
 };
 
-export const getEducatorDashboard = async (topic: string) => {
-  const response = await api.get(`/educators/dashboard?topic=${encodeURIComponent(topic)}`);
+export const getEducatorDashboard = async (topic: string, apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  const response = await apiInstance.get(`/educators/dashboard?topic=${encodeURIComponent(topic)}`);
   return response.data;
 };
 
-export const getReTeachingRecommendations = async (topic: string) => {
-  const response = await api.get(`/educators/re-teaching?topic=${encodeURIComponent(topic)}`);
+export const getReTeachingRecommendations = async (topic: string, apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  const response = await apiInstance.get(`/educators/re-teaching?topic=${encodeURIComponent(topic)}`);
+  return response.data;
+};
+
+export const getQuizHistory = async (apiInstance?: any) => {
+  if (!apiInstance) {
+    throw new Error('API instance required. Pass apiInstance from useAuth context.');
+  }
+  const response = await apiInstance.get('/quiz/history');
   return response.data;
 };

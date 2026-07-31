@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON
 from datetime import datetime
 from app.models.base import Base
 
@@ -17,3 +17,7 @@ class QuestionAttempt(Base):
     theta_before = Column(Float)
     theta_after = Column(Float)
     timestamp = Column(DateTime, default=datetime.utcnow)
+    # New fields for complete question history
+    question_options = Column(JSON, nullable=True)  # Store all options {A: "...", B: "...", C: "...", D: "..."}
+    explanation = Column(String, nullable=True)  # Why the correct answer is right
+    bloom_level = Column(String, nullable=True)  # Bloom's taxonomy level
