@@ -40,7 +40,7 @@ function QuizContent() {
 
 
   // Quiz tracking
-  const [quizState, setQuizState] = useState<'setup' | 'playing' | 'results' | 'summary'>('setup');
+  const [quizState, setQuizState] = useState<'setup' | 'playing' | 'results'>('setup');
   const [inputTopic, setInputTopic] = useState(selectedTopic || "");
   const [dagData, setDagData] = useState<any>(null);
   const [isLoadingDag, setIsLoadingDag] = useState(false);
@@ -307,6 +307,14 @@ function QuizContent() {
     const isCorrect = selected === q.correct;
     if (isCorrect) setScore(s => s + 1);
 
+    setQuestionHistory(prev => [...prev, {
+      question: q.question,
+      subtopic: selectedSubtopic || "General",
+      concept: q.concept,
+      correct: isCorrect,
+      bloomLevel: bloomLevel
+    }]);
+
     try {
       // Get misconception if the user was incorrect
       const selectedOptionKey = q.optKeys[selected];
@@ -388,10 +396,29 @@ function QuizContent() {
 
     // Concepts to focus on = specific concepts (from LLM) where user got questions wrong
     const wrongRecords = questionHistory.filter(r => !r.correct);
-    const focusConcepts = Array.from(new Set(wrongRecords.map(r => r.concept)));
+    
+    // Smart Deduplication for LLM-generated similar concepts
+    let focusConceptsList: {original: string, norm: string, subtopic: string}[] = [];
+    wrongRecords.forEach(r => {
+      if (!r.concept) return;
+      let norm = r.concept.replace(/\([^)]*\)/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (norm.endsWith('s') && !norm.endsWith('ss')) norm = norm.slice(0, -1);
+      if (!norm) return;
+      
+      let dupIdx = focusConceptsList.findIndex(item => item.norm.includes(norm) || norm.includes(item.norm));
+      if (dupIdx !== -1) {
+        if (norm.length < focusConceptsList[dupIdx].norm.length) {
+          focusConceptsList[dupIdx] = { original: r.concept, norm, subtopic: r.subtopic };
+        }
+      } else {
+        focusConceptsList.push({ original: r.concept, norm, subtopic: r.subtopic });
+      }
+    });
+
+    const focusConcepts = focusConceptsList.map(item => item.original);
     // Map each concept → its parent subtopic for display context
     const conceptSubtopicMap: Record<string, string> = {};
-    wrongRecords.forEach(r => { if (!conceptSubtopicMap[r.concept]) conceptSubtopicMap[r.concept] = r.subtopic; });
+    focusConceptsList.forEach(item => { conceptSubtopicMap[item.original] = item.subtopic; });
 
     // Bloom level distribution of wrong answers
     const wrongBloomLevels = questionHistory
@@ -636,12 +663,7 @@ function QuizContent() {
     );
   }
 
-  const handleEndQuiz = () => {
-    if (window.confirm("Are you sure you want to end the quiz? Your final score and estimated ability level will be saved.")) {
-      proctoring.stopProctoring();
-      setQuizState('summary');
-    }
-  };
+
 
   if (isLoading || !user || user.role !== 'student') {
     return (
@@ -731,57 +753,7 @@ function QuizContent() {
     );
   }
 
-  if (quizState === 'summary') {
-    return (
-      <div style={{ minHeight: 'calc(100vh - 4rem)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#FAFAFC', padding: '2rem' }}>
-        <div style={{ background: 'white', padding: '2.5rem', borderRadius: '16px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05)', width: '100%', maxWidth: '480px', textAlign: 'center', border: '1px solid #E5E7EB' }}>
-          <div style={{ width: '4rem', height: '4rem', background: '#ECFDF5', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', border: '2px solid #A7F3D0' }}>
-            <CheckCircle size={32} color="#10B981" />
-          </div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: '#111827', letterSpacing: '-0.02em' }}>Quiz Completed!</h2>
-          <p style={{ fontSize: '0.9375rem', color: '#6B7280', marginBottom: '2rem' }}>Great job completing your adaptive learning session on <strong>{inputTopic}</strong>.</p>
-          
-          <div style={{ background: '#F9FAFB', borderRadius: '12px', padding: '1.5rem', border: '1px solid #F3F4F6', marginBottom: '2rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div style={{ textAlign: 'center', borderRight: '1px solid #E5E7EB' }}>
-              <span style={{ display: 'block', fontSize: '0.75rem', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Final Score</span>
-              <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#111827' }}>{score} <span style={{ fontSize: '1rem', color: '#6B7280', fontWeight: 500 }}>/ {qIndex + (submitted ? 1 : 0)}</span></span>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <span style={{ display: 'block', fontSize: '0.75rem', color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.05em', marginBottom: '0.25rem' }}>Estimated Ability</span>
-              <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#7C3AED' }}>{(theta > 0 ? '+' : '')}{theta.toFixed(2)}</span>
-            </div>
-          </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <button 
-              onClick={() => {
-                setQuizState('setup');
-                setScore(0);
-                setQIndex(0);
-                setTheta(0.0);
-                setQ(null);
-                setBloomLevel("Remembering");
-                setDifficulty(0.5);
-              }}
-              style={{ width: '100%', background: '#7C3AED', color: 'white', padding: '0.875rem', borderRadius: '8px', border: 'none', fontWeight: 700, fontSize: '0.9375rem', cursor: 'pointer', transition: 'all 0.15s ease' }}
-              onMouseOver={(e) => e.currentTarget.style.background = '#6D28D9'}
-              onMouseOut={(e) => e.currentTarget.style.background = '#7C3AED'}
-            >
-              Start Another Topic
-            </button>
-            <button 
-              onClick={() => router.push('/dashboard')}
-              style={{ width: '100%', background: 'transparent', color: '#4B5563', border: '1px solid #D1D5DB', padding: '0.875rem', borderRadius: '8px', fontWeight: 700, fontSize: '0.9375rem', cursor: 'pointer', transition: 'all 0.15s ease' }}
-              onMouseOver={(e) => { e.currentTarget.style.background = '#F9FAFB'; e.currentTarget.style.borderColor = '#9CA3AF'; }}
-              onMouseOut={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = '#D1D5DB'; }}
-            >
-              Go to Dashboard
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // Fix 1: Show restoring state while seeding violation count from backend
   if (browserMonitoring.isRestoringSession) {
@@ -987,28 +959,7 @@ function QuizContent() {
                   </button>
                 )}
                 
-                <button
-                  onClick={handleEndQuiz}
-                  style={{
-                    background: '#FEF2F2',
-                    color: '#DC2626',
-                    border: '1px solid #FCA5A5',
-                    borderRadius: '10px',
-                    padding: '0.75rem 1.5rem',
-                    fontWeight: 700,
-                    fontSize: '0.9375rem',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = '#FEE2E2';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = '#FEF2F2';
-                  }}
-                >
-                  End Quiz
-                </button>
+
               </div>
               <span style={{ fontSize: '0.875rem', color: '#9CA3AF' }}>
                 Score: {score}/{qIndex + (submitted ? 1 : 0)}

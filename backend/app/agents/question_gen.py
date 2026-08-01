@@ -88,6 +88,10 @@ Respond strictly in valid JSON format (no markdown, no backticks):
         try:
             data = json.loads(content)
             data["is_variant"] = True
+            if "concept" in base_question:
+                data["concept"] = base_question["concept"]
+            if "hint" in base_question:
+                data["hint"] = base_question["hint"]
             return data
         except json.JSONDecodeError:
             # Fallback to base question if variant generation fails

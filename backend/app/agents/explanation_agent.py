@@ -40,7 +40,8 @@ def sanitize_part(part_str: str) -> str:
             
             if label and not (label.startswith('"') and label.endswith('"')):
                 if any(c in label for c in ['[', ']', '(', ')', '{', '}', ',', ':', '+', '=', '-']):
-                    label = f'"{label.replace("\"", "\\\"")}"'
+                    escaped_label = label.replace('"', '\\"')
+                    label = f'"{escaped_label}"'
                     
             node_def = sanitize_node_def(node_def)
             return f"|{label}| {node_def}"
