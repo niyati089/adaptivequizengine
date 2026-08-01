@@ -1,20 +1,17 @@
 "use client";
 
 import React, { useState } from 'react';
+import { ArrowRight, GraduationCap, Mail, School, Sparkles } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { Mail, Lock, User as UserIcon, GraduationCap, School, ArrowRight, Sparkles } from 'lucide-react';
-import Link from 'next/link';
+import { DancingSquares } from '@/components/shared/DancingSquares';
 
 export default function LoginPage() {
   const { login, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
-  
-  // Fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<'student' | 'teacher'>('student');
-  
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -22,378 +19,114 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
-
     try {
       if (isLogin) {
-        await login(email, password);
+        await login(email, password, role);
       } else {
-        if (!name) {
-          throw new Error("Name is required");
-        }
+        if (!name.trim()) throw new Error('Name is required');
         await register(name, email, password, role);
       }
     } catch (err: any) {
-      console.error(err);
-      if (err.response && err.response.data && err.response.data.detail) {
-        setError(err.response.data.detail);
-      } else {
-        setError(err.message || "Something went wrong. Please check your credentials.");
-      }
+      setError(err.response?.data?.detail || err.message || 'Something went wrong.');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div style={{
-      minHeight: 'calc(100vh - 4rem)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'radial-gradient(circle at 10% 20%, rgba(124, 58, 237, 0.05) 0%, transparent 40%), radial-gradient(circle at 90% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 40%), #FAFAFC',
-      padding: '2rem 1.5rem',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
-      {/* Background blobs */}
-      <div style={{
-        position: 'absolute', top: '15%', left: '10%',
-        width: '24rem', height: '24rem',
-        background: 'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(99,102,241,0.1))',
-        borderRadius: '50%', filter: 'blur(60px)',
-        zIndex: 0,
-      }} />
-      <div style={{
-        position: 'absolute', bottom: '15%', right: '10%',
-        width: '24rem', height: '24rem',
-        background: 'linear-gradient(135deg, rgba(6,182,212,0.08), rgba(236,72,153,0.08))',
-        borderRadius: '50%', filter: 'blur(60px)',
-        zIndex: 0,
-      }} />
+    <div className="app-page">
+      <main className="app-shell-wide">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--space-8)', alignItems: 'center', minHeight: 'calc(100vh - 12rem)' }}>
+          <section>
+            <span className="badge badge-green"><Sparkles size={16} style={{ width: 'var(--icon-sm)', height: 'var(--icon-sm)' }} /> Auth Gateway</span>
+            <h1 className="chunky-heading" style={{ fontSize: 'var(--heading-xl)', margin: 'var(--space-6) 0' }}>
+              Enter your learning space
+            </h1>
+            <p style={{ fontWeight: 'var(--font-medium)', lineHeight: 'var(--leading-relaxed)', color: 'var(--muted)', maxWidth: '34rem' }}>
+              Choose student or educator mode, then continue into adaptive quizzes, classes, analytics, and teacher-managed learning paths.
+            </p>
+          </section>
 
-      {/* Main card */}
-      <div style={{
-        background: 'rgba(255, 255, 255, 0.85)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        border: '1px solid rgba(229, 231, 235, 0.8)',
-        borderRadius: '24px',
-        boxShadow: '0 20px 40px -15px rgba(0,0,0,0.05), 0 0 0 1px rgba(124,58,237,0.02)',
-        width: '100%',
-        maxWidth: '28rem',
-        padding: '2.5rem',
-        zIndex: 1,
-        position: 'relative',
-      }}>
-        
-        {/* Toggle tabs */}
-        <div style={{
-          display: 'flex',
-          background: '#F3F4F6',
-          borderRadius: '12px',
-          padding: '0.25rem',
-          marginBottom: '2rem',
-        }}>
-          <button
-            onClick={() => { setIsLogin(true); setError(null); }}
-            style={{
-              flex: 1,
-              padding: '0.625rem',
-              borderRadius: '8px',
-              border: 'none',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              background: isLogin ? 'white' : 'transparent',
-              color: isLogin ? '#111827' : '#6B7280',
-              boxShadow: isLogin ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
-            }}
-          >
-            Sign In
-          </button>
-          <button
-            onClick={() => { setIsLogin(false); setError(null); }}
-            style={{
-              flex: 1,
-              padding: '0.625rem',
-              borderRadius: '8px',
-              border: 'none',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              background: !isLogin ? 'white' : 'transparent',
-              color: !isLogin ? '#111827' : '#6B7280',
-              boxShadow: !isLogin ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
-            }}
-          >
-            Create Account
-          </button>
-        </div>
+          <section className="card" style={{ background: 'var(--surface)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', marginBottom: 'var(--space-6)' }}>
+              <button type="button" onClick={() => { setIsLogin(true); setError(null); }} className="neo-btn" style={{ background: isLogin ? 'var(--navy)' : 'var(--surface)', color: isLogin ? 'var(--surface)' : 'var(--navy)' }}>Sign In</button>
+              <button type="button" onClick={() => { setIsLogin(false); setError(null); }} className="neo-btn" style={{ background: !isLogin ? 'var(--navy)' : 'var(--surface)', color: !isLogin ? 'var(--surface)' : 'var(--navy)' }}>Create</button>
+            </div>
 
-        {/* Title */}
-        <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.375rem',
-            background: 'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(99,102,241,0.1))',
-            padding: '0.375rem 0.875rem',
-            borderRadius: '99px',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            color: '#7C3AED',
-            marginBottom: '0.75rem',
-          }}>
-            <Sparkles size={12} />
-            <span>AI-Adaptive Learning Engine</span>
-          </div>
-          <h2 style={{
-            fontSize: '1.75rem',
-            fontWeight: 800,
-            color: '#111827',
-            letterSpacing: '-0.02em',
-            margin: 0,
-          }}>
-            {isLogin ? 'Welcome Back' : 'Get Started'}
-          </h2>
-          <p style={{
-            fontSize: '0.875rem',
-            color: '#6B7280',
-            marginTop: '0.375rem',
-            margin: '0.375rem 0 0 0',
-          }}>
-            {isLogin ? 'Sign in to continue your adaptive journey' : 'Join a smart ecosystem tailored to you'}
-          </p>
-        </div>
+            <h2 className="chunky-heading" style={{ fontSize: 'var(--text-3xl)', marginBottom: 'var(--space-3)' }}>
+              {isLogin ? 'Welcome Back' : 'New Account'}
+            </h2>
+            <p style={{ fontWeight: 'var(--font-extrabold)', color: 'var(--ink-secondary)', marginBottom: 'var(--space-6)' }}>
+              {isLogin ? 'Select your role and sign in.' : 'Pick an account type and register.'}
+            </p>
 
-        {error && (
-          <div style={{
-            background: '#FEF2F2',
-            border: '1px solid #FCA5A5',
-            color: '#991B1B',
-            borderRadius: '12px',
-            padding: '0.75rem 1rem',
-            fontSize: '0.875rem',
-            marginBottom: '1.5rem',
-            fontWeight: 500,
-          }}>
-            {error}
-          </div>
-        )}
+            {error && (
+              <div className="card" style={{ background: 'var(--error-soft)', padding: 'var(--space-3)', marginBottom: 'var(--space-4)', color: 'var(--error)', fontWeight: 'var(--font-extrabold)' }}>
+                {error}
+              </div>
+            )}
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Name field (register only) */}
-          {!isLogin && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-              <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#374151' }}>Full Name</label>
-              <div style={{ position: 'relative' }}>
-                <div style={{
-                  position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)',
-                  color: '#9CA3AF', pointerEvents: 'none', display: 'flex', alignItems: 'center',
-                }}>
-                  <UserIcon size={18} />
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              {!isLogin && (
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 'var(--font-black)', textTransform: 'uppercase' }}>
+                  Full Name
+                  <input value={name} onChange={e => setName(e.target.value)} placeholder="Alex Johnson" style={fieldStyle} required={!isLogin} />
+                </label>
+              )}
+
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 'var(--font-black)', textTransform: 'uppercase' }}>
+                Email
+                <div style={{ position: 'relative' }}>
+                  <Mail size={18} style={{ position: 'absolute', left: 'var(--space-3)', top: '50%', transform: 'translateY(-50%)', width: 'var(--icon-md)', height: 'var(--icon-md)' }} />
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="alex@school.edu" style={{ ...fieldStyle, paddingLeft: 'var(--space-10)' }} required />
                 </div>
-                <input
-                  type="text"
-                  placeholder="Alex Johnson"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required={!isLogin}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem 1rem 0.75rem 2.75rem',
-                    borderRadius: '12px',
-                    border: '1px solid #E5E7EB',
-                    fontSize: '0.9375rem',
-                    background: 'white',
-                    outline: 'none',
-                    transition: 'all 0.15s',
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#7C3AED'}
-                  onBlur={(e) => e.target.style.borderColor = '#E5E7EB'}
-                />
-              </div>
-            </div>
-          )}
+              </label>
 
-          {/* Email field */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-            <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#374151' }}>Email Address</label>
-            <div style={{ position: 'relative' }}>
-              <div style={{
-                position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)',
-                color: '#9CA3AF', pointerEvents: 'none', display: 'flex', alignItems: 'center',
-              }}>
-                <Mail size={18} />
-              </div>
-              <input
-                type="email"
-                placeholder="alex@university.edu"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem 0.75rem 2.75rem',
-                  borderRadius: '12px',
-                  border: '1px solid #E5E7EB',
-                  fontSize: '0.9375rem',
-                  background: 'white',
-                  outline: 'none',
-                  transition: 'all 0.15s',
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#7C3AED'}
-                onBlur={(e) => e.target.style.borderColor = '#E5E7EB'}
-              />
-            </div>
-          </div>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 'var(--font-black)', textTransform: 'uppercase' }}>
+                Password
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" style={fieldStyle} required />
+              </label>
 
-          {/* Password field */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-            <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#374151' }}>Password</label>
-            <div style={{ position: 'relative' }}>
-              <div style={{
-                position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)',
-                color: '#9CA3AF', pointerEvents: 'none', display: 'flex', alignItems: 'center',
-              }}>
-                <Lock size={18} />
-              </div>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                style={{
-                  width: '100%',
-                  padding: '0.75rem 1rem 0.75rem 2.75rem',
-                  borderRadius: '12px',
-                  border: '1px solid #E5E7EB',
-                  fontSize: '0.9375rem',
-                  background: 'white',
-                  outline: 'none',
-                  transition: 'all 0.15s',
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#7C3AED'}
-                onBlur={(e) => e.target.style.borderColor = '#E5E7EB'}
-              />
-            </div>
-          </div>
-
-          {/* Role selection card grids (register only) */}
-          {!isLogin && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              <label style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#374151' }}>Choose Account Type</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                
-                {/* Student role card */}
-                <div
-                  onClick={() => setRole('student')}
-                  style={{
-                    border: '2px solid ' + (role === 'student' ? '#7C3AED' : '#E5E7EB'),
-                    background: role === 'student' ? '#FBF9FF' : 'white',
-                    borderRadius: '14px',
-                    padding: '0.875rem',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                  }}
-                >
-                  <GraduationCap size={22} color={role === 'student' ? '#7C3AED' : '#6B7280'} />
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: role === 'student' ? '#7C3AED' : '#374151' }}>
-                    Student
-                  </span>
-                  <span style={{ fontSize: '0.6875rem', color: '#9CA3AF' }}>Learn Adaptively</span>
+              <div>
+                <div style={{ fontWeight: 'var(--font-black)', textTransform: 'uppercase', marginBottom: 'var(--space-2)' }}>{isLogin ? 'Sign In As' : 'Account Type'}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                  {[
+                    { value: 'student' as const, label: 'Student', icon: GraduationCap, sub: 'Learn adaptively' },
+                    { value: 'teacher' as const, label: 'Educator', icon: School, sub: 'Manage classes' },
+                  ].map(item => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setRole(item.value)}
+                      className="neo-btn"
+                      style={{ background: role === item.value ? 'var(--primary-soft)' : 'var(--surface)', flexDirection: 'column', alignItems: 'center', padding: 'var(--space-4)' }}
+                    >
+                      <item.icon size={24} style={{ width: 'var(--icon-xl)', height: 'var(--icon-xl)' }} />
+                      <span>{item.label}</span>
+                      <small style={{ fontFamily: 'Inter, sans-serif', fontWeight: 'var(--font-extrabold)' }}>{item.sub}</small>
+                    </button>
+                  ))}
                 </div>
-
-                {/* Teacher role card */}
-                <div
-                  onClick={() => setRole('teacher')}
-                  style={{
-                    border: '2px solid ' + (role === 'teacher' ? '#7C3AED' : '#E5E7EB'),
-                    background: role === 'teacher' ? '#FBF9FF' : 'white',
-                    borderRadius: '14px',
-                    padding: '0.875rem',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                  }}
-                >
-                  <School size={22} color={role === 'teacher' ? '#7C3AED' : '#6B7280'} />
-                  <span style={{ fontSize: '0.875rem', fontWeight: 700, color: role === 'teacher' ? '#7C3AED' : '#374151' }}>
-                    Educator
-                  </span>
-                  <span style={{ fontSize: '0.6875rem', color: '#9CA3AF' }}>Manage & Track</span>
-                </div>
-
               </div>
-            </div>
-          )}
 
-          {/* Submit button */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            style={{
-              background: 'linear-gradient(135deg, #7C3AED 0%, #6366F1 100%)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              padding: '0.875rem',
-              fontSize: '0.9375rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              marginTop: '0.5rem',
-              transition: 'opacity 0.15s',
-              opacity: isLoading ? 0.7 : 1,
-              boxShadow: '0 4px 12px rgba(124, 58, 237, 0.25)',
-            }}
-          >
-            <span>{isLoading ? 'Processing...' : isLogin ? 'Access Portal' : 'Create Account'}</span>
-            {!isLoading && <ArrowRight size={16} />}
-          </button>
-        </form>
-
-        {/* Footer text */}
-        <div style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.8125rem', color: '#9CA3AF' }}>
-          {isLogin ? (
-            <span>
-              Don't have an account?{' '}
-              <span
-                onClick={() => { setIsLogin(false); setError(null); }}
-                style={{ color: '#7C3AED', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
-              >
-                Sign up
-              </span>
-            </span>
-          ) : (
-            <span>
-              Already registered?{' '}
-              <span
-                onClick={() => { setIsLogin(true); setError(null); }}
-                style={{ color: '#7C3AED', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
-              >
-                Log in
-              </span>
-            </span>
-          )}
+              <button type="submit" disabled={isLoading} className="neo-btn neo-btn-primary" style={{ width: '100%', padding: 'var(--space-4)', opacity: isLoading ? 0.7 : 1 }}>
+                {isLoading ? <DancingSquares size="sm" inline label="Processing..." /> : isLogin ? 'Access Portal' : 'Create Account'}
+                {!isLoading && <ArrowRight size={18} style={{ width: 'var(--icon-md)', height: 'var(--icon-md)' }} />}
+              </button>
+            </form>
+          </section>
         </div>
-
-      </div>
+      </main>
     </div>
   );
 }
+
+const fieldStyle: React.CSSProperties = {
+  width: '100%',
+  padding: 'var(--space-3)',
+  border: '1px solid var(--outline)',
+  borderRadius: 'var(--radius-xl)',
+  background: 'var(--surface-low)',
+  outline: 'none',
+  fontWeight: 'var(--font-semibold)',
+};

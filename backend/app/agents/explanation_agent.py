@@ -1,110 +1,35 @@
+import hashlib
 import json
+from collections import OrderedDict
+
+from app.agents.mermaid_utils import sanitize_mermaid
 from app.core.groq_client import get_groq_client
 from app.core.config import config
 
-def sanitize_node_def(node_str: str) -> str:
-    node_str = node_str.strip()
-    bracket_index = -1
-    bracket_char = ''
-    closing_char = ''
-    for i, char in enumerate(node_str):
-        if char in ['[', '(', '{']:
-            bracket_index = i
-            bracket_char = char
-            closing_char = ']' if char == '[' else (')' if char == '(' else '}')
-            break
-            
-    if bracket_index != -1:
-        node_id = node_str[:bracket_index].strip()
-        last_closing = node_str.rfind(closing_char)
-        if last_closing > bracket_index:
-            label = node_str[bracket_index+1:last_closing].strip()
-            if not (label.startswith('"') and label.endswith('"')):
-                label_escaped = label.replace('"', '\\"')
-                new_node = f"{node_id}{bracket_char}\"{label_escaped}\"{closing_char}"
-                if last_closing + 1 < len(node_str):
-                    new_node += node_str[last_closing+1:]
-                node_str = new_node
-    return node_str
+# Small in-process cache so repeated practice on the same question doesn't
+# re-hit the LLM every time. Per-worker-process only (not shared across
+# multiple uvicorn workers) -- a reasonable first pass; can graduate to a
+# persistent/shared cache later if it proves valuable.
+_CACHE_MAX_SIZE = 256
+_explanation_cache: "OrderedDict[str, dict]" = OrderedDict()
 
-def sanitize_part(part_str: str) -> str:
-    part_str = part_str.strip()
-    if not part_str:
-        return ""
-        
-    if part_str.startswith("|"):
-        second_pipe = part_str.find("|", 1)
-        if second_pipe != -1:
-            label = part_str[1:second_pipe].strip()
-            node_def = part_str[second_pipe+1:].strip()
-            
-            if label and not (label.startswith('"') and label.endswith('"')):
-                if any(c in label for c in ['[', ']', '(', ')', '{', '}', ',', ':', '+', '=', '-']):
-                    label = f'"{label.replace("\"", "\\\"")}"'
-                    
-            node_def = sanitize_node_def(node_def)
-            return f"|{label}| {node_def}"
-            
-    return sanitize_node_def(part_str)
 
-def sanitize_mermaid(syntax: str) -> str:
-    if not syntax:
-        return ""
-    lines = syntax.split("\n")
-    cleaned_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("```"):
-            continue
-        cleaned_lines.append(line)
-    syntax = "\n".join(cleaned_lines).strip()
-    
-    has_header = False
-    lower_syntax = syntax.lower()
-    headers = ["graph td", "graph lr", "flowchart td", "flowchart lr", "sequencediagram", "classdiagram", "statediagram"]
-    for header in headers:
-        if lower_syntax.startswith(header):
-            has_header = True
-            break
-            
-    if not has_header:
-        syntax = "flowchart TD\n" + syntax
-        
-    final_lines = []
-    for line in syntax.split("\n"):
-        line_str = line.strip()
-        if not line_str:
-            continue
-        
-        is_header = False
-        for header in headers:
-            if line_str.lower().startswith(header):
-                is_header = True
-                break
-        
-        if is_header:
-            final_lines.append(line_str)
-            continue
-            
-        # Clean up arrows - replace -> with --> but avoid triple dashes
-        line_str = line_str.replace("->", "-->")
-        line_str = line_str.replace("--->", "-->")
-        line_str = line_str.replace(" |>", "|")
-        line_str = line_str.replace("|>", "|")
-        
-        parts = line_str.split("-->")
-        new_parts = [sanitize_part(part) for part in parts]
-        
-        line_str = " --> ".join(new_parts)
-        final_lines.append(line_str)
-        
-    return "\n".join(final_lines).strip()
+def _cache_key(question: str, correct_answer: str, difficulty: str) -> str:
+    raw = f"{question}\x00{correct_answer}\x00{difficulty}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
 
 class ExplanationAgent:
     def __init__(self):
         self.client = get_groq_client()
 
     async def generate_explanation(self, question: str, correct_answer: str, difficulty: str) -> dict:
+        cache_key = _cache_key(question, correct_answer, difficulty)
+        cached = _explanation_cache.get(cache_key)
+        if cached is not None:
+            _explanation_cache.move_to_end(cache_key)
+            return cached
+
         prompt = f"""
 You are an expert tutor. Provide a learner-friendly explanation for the following question and answer.
 Adjust your explanation depth based on the provided difficulty level: {difficulty}.
@@ -115,6 +40,8 @@ Correct Answer: {correct_answer}
 Respond strictly in JSON format with the following keys:
 - "explanation": A detailed explanation tailored to the difficulty.
 - "key_takeaway": A short, memorable summary or key takeaway.
+- "example": A concrete, real-world example illustrating the concept.
+- "common_mistake": A common pitfall or mistake learners make on this topic and how to avoid it.
 - "mermaid_diagram": (Optional) Valid Mermaid.js flowchart or graph syntax (TD or LR) representing the visual workflow, process, or relationship described in the explanation. Set this to null if the question is simple recall, factual trivia, or if a diagram does not add genuine educational value (e.g. "What is the capital of India?").
 
 Strict Mermaid Syntax Rules (Crucial!):
@@ -135,36 +62,24 @@ Strict Mermaid Syntax Rules (Crucial!):
         content = response.choices[0].message.content.strip()
         try:
             data = json.loads(content)
-            mermaid_syntax = data.get("mermaid_diagram")
-            
-            # Clean and sanitize the syntax
-            mermaid_syntax = sanitize_mermaid(mermaid_syntax)
-            
-            if mermaid_syntax and isinstance(mermaid_syntax, str) and mermaid_syntax.lower() != "null":
-                import base64
-                import httpx
-                try:
-                    # URL-safe Base64 encode the RAW string directly
-                    encoded = base64.urlsafe_b64encode(mermaid_syntax.encode('utf-8')).decode('utf-8')
-                    diagram_url = f"https://mermaid.ink/svg/{encoded}"
-                    
-                    # Verify if the diagram compiles successfully on mermaid.ink
-                    async with httpx.AsyncClient() as client:
-                        verify_res = await client.get(diagram_url, timeout=3.0)
-                        if verify_res.status_code == 200:
-                            data["diagram_url"] = diagram_url
-                        else:
-                            print(f"Mermaid validation failed (status {verify_res.status_code}): {mermaid_syntax}")
-                            data["diagram_url"] = None
-                except Exception as e:
-                    print(f"Failed to encode or verify mermaid diagram: {e}")
-                    data["diagram_url"] = None
-            else:
-                data["diagram_url"] = None
-            return data
+            raw_diagram = data.get("mermaid_diagram")
+            sanitized = sanitize_mermaid(raw_diagram) if isinstance(raw_diagram, str) else ""
+            data["mermaid_diagram"] = sanitized or None
         except json.JSONDecodeError:
-            return {
+            data = {
                 "explanation": content,
                 "key_takeaway": "Always review the core concepts carefully.",
-                "diagram_url": None
+                "example": "Reviewing core principles helps contextualize learning.",
+                "common_mistake": "Skipping basic conceptual details or misinterpreting the problem definition.",
+                "mermaid_diagram": None,
             }
+
+        self._store_in_cache(cache_key, data)
+        return data
+
+    @staticmethod
+    def _store_in_cache(key: str, value: dict) -> None:
+        _explanation_cache[key] = value
+        _explanation_cache.move_to_end(key)
+        while len(_explanation_cache) > _CACHE_MAX_SIZE:
+            _explanation_cache.popitem(last=False)

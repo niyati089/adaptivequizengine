@@ -1,97 +1,143 @@
-import json
-from app.core.groq_client import get_groq_client
-from app.core.config import config
+"""Anti-cheat question variant generator.
 
-class QuestionGenerationAgent:
-    """
-    Generates new questions using Groq LLM.
-    """
-    def __init__(self):
-        self.client = get_groq_client()
-
-    async def generate(self, topic: str, difficulty: float) -> dict:
-        prompt = f"""
-Generate a multiple-choice question about '{topic}' with a difficulty level of {difficulty} out of 10.
-Respond strictly in JSON format with the following structure:
-{{
-  "question": "The question text here",
-  "options": ["option 1", "option 2", "option 3", "option 4"],
-  "correct_answer": "option 1"
-}}
+Generates a semantically equivalent but surface-different variant of a base
+question (different names / numbers / scenario, same concept + difficulty +
+Bloom level).  Falls back to the base question when the LLM produces
+invalid JSON or a structurally invalid variant.
 """
-        response = await self.client.chat.completions.create(
-            model=config.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": "You are an expert question generator."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            response_format={"type": "json_object"}
-        )
-        content = response.choices[0].message.content.strip()
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            return {
-                "question": "Failed to generate question.",
-                "options": [],
-                "correct_answer": ""
-            }
+from __future__ import annotations
 
-    async def generate_variant(self, base_question: dict) -> dict:
-        """
-        Generates a semantically equivalent variant of a base question.
-        """
-        prompt = f"""
-You are an expert educational content writer. Your task is to generate a semantically equivalent variant of the following multiple-choice question to prevent cheating and answer copying.
+import json
+import random
+from typing import Optional
 
-A semantically equivalent variant must:
-1. Test the exact same concept and logic at the exact same difficulty level and Bloom's Taxonomy level.
-2. Change the scenario, cover story, names, variables, and numerical values (if math/science). For example, if the base question is about a train traveling between two cities, change it to a boat traveling between two islands, or a runner on a track.
-3. Shuffle the correct answer option position (A, B, C, D) randomly so that the correct letter is different from the base question, if possible.
-4. Update the explanations and misconceptions to match the new scenario, names, and variables.
+from groq import Groq
 
-Base Question JSON:
+from app.misconceptions.seed_tags import DEFAULT_TAGS
+
+
+def _shuffle_options(data: dict) -> dict:
+    """Re-label A/B/C/D with a fresh random permutation so the correct
+    answer letter changes between the base question and the variant."""
+    old_options: dict[str, str] = data["options"]
+    old_correct: str = data["correct_answer"]
+
+    keys = list(old_options.keys())
+    shuffled_keys = keys[:]
+    random.shuffle(shuffled_keys)
+
+    new_options: dict[str, str] = {}
+    new_correct = old_correct
+    new_misconceptions: dict[str, str] = {}
+
+    old_misconceptions: dict[str, str] = data.get("misconceptions") or {}
+
+    for new_key, old_key in zip(keys, shuffled_keys):
+        new_options[new_key] = old_options[old_key]
+        if old_key == old_correct:
+            new_correct = new_key
+        if old_key in old_misconceptions:
+            new_misconceptions[new_key] = old_misconceptions[old_key]
+
+    return {
+        **data,
+        "options": new_options,
+        "correct_answer": new_correct,
+        "misconceptions": new_misconceptions,
+        "is_variant": True,
+    }
+
+
+def _validate_variant(data: dict) -> bool:
+    """Return True iff the variant has the required structure."""
+    required_keys = {"A", "B", "C", "D"}
+    opts = data.get("options")
+    if not isinstance(opts, dict):
+        return False
+    if set(opts.keys()) != required_keys:
+        return False
+    if data.get("correct_answer") not in required_keys:
+        return False
+    if not data.get("question"):
+        return False
+    return True
+
+
+def generate_variant(base_question: dict, api_key: str) -> dict:
+    """Return a variant of *base_question* or the base itself on failure.
+
+    The returned dict always includes ``is_variant: bool`` so callers can
+    tell at a glance whether the LLM rewrite succeeded.
+    """
+    # Build a human-readable tag list for the prompt so the LLM keeps
+    # wrong-option misconception text anchored to recognizable categories.
+    tag_descriptions = "\n".join(
+        f"- {tag}: {label} — {desc}" for tag, label, desc in DEFAULT_TAGS
+    )
+
+    prompt = f"""You are an adaptive quiz engine. Your job is to rewrite the
+question below so that it tests the SAME concept, at the SAME difficulty and
+Bloom's level, but uses DIFFERENT surface details (different character names,
+numbers, code snippets, or real-world scenario).
+
+Rules:
+1. Keep the concept, Bloom's level, and difficulty IDENTICAL.
+2. Change names, numbers, or scenarios enough that the wording is clearly different.
+3. Maintain four options labelled A, B, C, D.
+4. The correct answer must still be correct for the rewritten question.
+5. For each WRONG option, write a misconception description that maps to one
+   of these canonical misconception categories (keep the mapping recognizable):
+{tag_descriptions}
+6. Do NOT copy the original wording verbatim.
+
+Original question:
 {json.dumps(base_question, indent=2)}
 
-Respond strictly in valid JSON format (no markdown, no backticks):
+Respond ONLY with valid JSON (no markdown, no backticks):
 {{
-  "question": "The new question text with changed scenario/numbers",
+  "question": "Rewritten question text",
   "options": {{
-    "A": "Option A text",
-    "B": "Option B text",
-    "C": "Option C text",
-    "D": "Option D text"
+    "A": "Option A",
+    "B": "Option B",
+    "C": "Option C",
+    "D": "Option D"
   }},
-  "correct_answer": "The new correct option letter (A, B, C, or D)",
-  "explanation": "Updated explanation matching the new scenario",
-  "difficulty": {base_question.get('difficulty', 0.5)},
-  "bloom_level": "{base_question.get('bloom_level', 'Apply')}",
+  "correct_answer": "A",
+  "explanation": "Why the correct answer is correct",
+  "difficulty": {base_question.get("difficulty", 0.0)},
+  "bloom_level": "{base_question.get("bloom_level", "Remembering")}",
   "misconceptions": {{
-    "A": "Misconception for Option A (if incorrect)",
-    "B": "Misconception for Option B (if incorrect)",
-    "C": "Misconception for Option C (if incorrect)",
-    "D": "Misconception for Option D (if incorrect)"
-  }}
-}}
-"""
-        response = await self.client.chat.completions.create(
-            model=config.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a question mutation specialist."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.6,
-            response_format={"type": "json_object"}
-        )
-        content = response.choices[0].message.content.strip()
-        try:
-            data = json.loads(content)
-            data["is_variant"] = True
-            return data
-        except json.JSONDecodeError:
-            # Fallback to base question if variant generation fails
-            base_copy = dict(base_question)
-            base_copy["is_variant"] = False
-            return base_copy
+    "B": "Misconception for B",
+    "C": "Misconception for C",
+    "D": "Misconception for D"
+  }},
+  "hint": "A subtle hint without giving away the answer"
+}}"""
 
+    try:
+        client = Groq(api_key=api_key)
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+        )
+        raw = response.choices[0].message.content.strip()
+
+        # Strip accidental code fences
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
+
+        variant = json.loads(raw, strict=False)
+    except Exception:
+        # Any network/parse error → graceful fallback
+        return {**base_question, "is_variant": False}
+
+    if not _validate_variant(variant):
+        return {**base_question, "is_variant": False}
+
+    # Shuffle the option letters so even the correct-answer letter differs
+    return _shuffle_options(variant)

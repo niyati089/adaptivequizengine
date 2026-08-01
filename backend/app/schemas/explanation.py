@@ -9,4 +9,7 @@ class ExplanationRequest(BaseModel):
 class ExplanationResponse(BaseModel):
     explanation: str
     key_takeaway: str
+    example: Optional[str] = None
+    common_mistake: Optional[str] = None
+    mermaid_diagram: Optional[str] = None
     diagram_url: Optional[str] = None

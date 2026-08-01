@@ -1,4 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
+
+from app.core.time_utils import utcnow
 
 class SM2Scheduler:
     """
@@ -35,7 +37,7 @@ class SM2Scheduler:
         if new_ease_factor < 1.3:
             new_ease_factor = 1.3
 
-        next_review_date = datetime.utcnow() + timedelta(days=new_interval)
+        next_review_date = utcnow() + timedelta(days=new_interval)
 
         return {
             "ease_factor": new_ease_factor,

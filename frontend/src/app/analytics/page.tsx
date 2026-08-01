@@ -1,55 +1,46 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   AreaChart, Area, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ScatterChart, Scatter, Cell
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
 import { TrendingUp, BarChart2, Clock, Target, Zap, Brain } from 'lucide-react';
-
-const thetaHistory = [
-  { week: 'Wk 1', avg: -0.40, top: 0.20, bottom: -0.80 },
-  { week: 'Wk 2', avg: -0.10, top: 0.45, bottom: -0.60 },
-  { week: 'Wk 3', avg: 0.18, top: 0.72, bottom: -0.30 },
-  { week: 'Wk 4', avg: 0.35, top: 0.90, bottom: -0.10 },
-  { week: 'Wk 5', avg: 0.48, top: 1.05, bottom: 0.05 },
-  { week: 'Wk 6', avg: 0.62, top: 1.20, bottom: 0.18 },
-];
-
-const masteryDist = [
-  { range: '0–20%', count: 8 }, { range: '21–40%', count: 14 }, { range: '41–60%', count: 27 },
-  { range: '61–80%', count: 38 }, { range: '81–100%', count: 23 },
-];
-
-const questionDiff = [
-  { b: '-3.0', count: 5 }, { b: '-2.0', count: 12 }, { b: '-1.0', count: 24 },
-  { b: '0.0', count: 38 }, { b: '+1.0', count: 32 }, { b: '+2.0', count: 18 },
-  { b: '+3.0', count: 7 },
-];
-
-const sessionLength = [
-  { sessions: 1, mastery: 35 }, { sessions: 2, mastery: 48 }, { sessions: 3, mastery: 58 },
-  { sessions: 5, mastery: 67 }, { sessions: 8, mastery: 76 }, { sessions: 12, mastery: 82 },
-  { sessions: 16, mastery: 87 }, { sessions: 20, mastery: 91 },
-];
-
-const insights = [
-  { icon: Clock, label: 'Avg. Time per Question', value: '1m 24s', delta: '↓ 18s from last week', color: '#7C3AED', bg: '#EDE9FE' },
-  { icon: Target, label: 'First-Attempt Accuracy', value: '71%', delta: '↑ 6% from last week', color: '#059669', bg: '#ECFDF5' },
-  { icon: Zap, label: 'Hint Usage Rate', value: '28%', delta: '↓ 5% (getting better!)', color: '#D97706', bg: '#FEF3C7' },
-  { icon: Brain, label: 'Socratic Hint Efficacy', value: '82%', delta: 'Correct after 1 hint', color: '#0284C7', bg: '#E0F2FE' },
-];
+import { useAuth } from '@/context/AuthContext';
+import { getTeacherAnalytics, getUserAnalytics } from '@/services/quizService';
+import { DancingSquares } from '@/components/shared/DancingSquares';
 
 const PERIODS = ['7 days', '30 days', '90 days', 'All time'];
+
+const emptyAnalytics = {
+  summary: {
+    total_questions: 0,
+    accuracy: 0,
+    current_theta: 0,
+    theta_delta: 0,
+    topics_practiced: 0,
+  },
+  theta_history: [],
+  mastery_distribution: [
+    { range: '0-20%', count: 0 },
+    { range: '21-40%', count: 0 },
+    { range: '41-60%', count: 0 },
+    { range: '61-80%', count: 0 },
+    { range: '81-100%', count: 0 },
+  ],
+  question_difficulty: [],
+  session_mastery: [],
+  topic_mastery: [],
+};
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload?.length) {
     return (
-      <div style={{ background: 'white', border: '1px solid #E5E7EB', borderRadius: '10px', padding: '0.75rem 1rem', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', fontSize: '0.875rem' }}>
-        <p style={{ color: '#6B7280', margin: '0 0 0.25rem' }}>{label}</p>
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--outline)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-3) var(--space-4)', boxShadow: 'var(--shadow-soft)', fontSize: 'var(--text-sm)' }}>
+        <p style={{ color: 'var(--muted)', margin: '0 0 var(--space-1)' }}>{label}</p>
         {payload.map((p: any, i: number) => (
-          <p key={i} style={{ color: p.color || '#7C3AED', fontWeight: 700, margin: '0.1rem 0' }}>{p.name}: {p.value}</p>
+          <p key={i} style={{ color: p.color || 'var(--primary)', fontWeight: 'var(--font-bold)', margin: '0.1rem 0' }}>{p.name}: {p.value}</p>
         ))}
       </div>
     );
@@ -58,103 +49,162 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function AnalyticsPage() {
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
   const [period, setPeriod] = useState('30 days');
+  const [analytics, setAnalytics] = useState<any>(emptyAnalytics);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    const loadAnalytics = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = user.role === 'teacher' ? await getTeacherAnalytics() : await getUserAnalytics();
+        setAnalytics(data);
+      } catch (err: any) {
+        setError(err.response?.data?.detail || 'Could not load analytics.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAnalytics();
+  }, [authLoading, router, user]);
+
+  const filtered = useMemo(() => {
+    const limits: Record<string, number> = {
+      '7 days': 7,
+      '30 days': 12,
+      '90 days': 16,
+      'All time': Number.MAX_SAFE_INTEGER,
+    };
+    const limit = limits[period];
+
+    return {
+      ...analytics,
+      theta_history: analytics.theta_history.slice(-limit),
+      session_mastery: analytics.session_mastery.slice(-limit),
+    };
+  }, [analytics, period]);
+
+  const insights = [
+    { icon: Clock, label: 'Questions Answered', value: String(analytics.summary.total_questions), delta: `${analytics.summary.topics_practiced} topics practiced`, color: 'var(--primary)', bg: 'var(--primary-soft)' },
+    { icon: Target, label: 'First-Attempt Accuracy', value: `${analytics.summary.accuracy}%`, delta: 'Based on saved quiz attempts', color: 'var(--success)', bg: 'var(--success-soft)' },
+    { icon: Zap, label: 'Current Ability', value: `${analytics.summary.current_theta >= 0 ? '+' : ''}${analytics.summary.current_theta}`, delta: `Delta ${analytics.summary.theta_delta >= 0 ? '+' : ''}${analytics.summary.theta_delta}`, color: 'var(--warning)', bg: 'var(--warning-soft)' },
+    { icon: Brain, label: 'Mastered Topics', value: String(analytics.topic_mastery.filter((t: any) => t.pct >= 70).length), delta: 'Topics at 70%+ accuracy', color: 'var(--info)', bg: 'var(--info-soft)' },
+  ];
+
+  if (authLoading || loading || !user) {
+    return (
+      <div className="app-page" style={{ display: 'grid', placeItems: 'center' }}>
+        <DancingSquares size="lg" label="Loading analytics..." />
+      </div>
+    );
+  }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F9FAFB', fontFamily: "'Inter', sans-serif", padding: '2rem 1.5rem' }}>
-      <div style={{ maxWidth: '76rem', margin: '0 auto' }}>
-
-        {/* ─── HEADER ─── */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
+    <div className="app-page">
+      <div className="app-shell-wide">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-8)', flexWrap: 'wrap', gap: 'var(--space-4)' }}>
           <div>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 900, color: '#111827', letterSpacing: '-0.03em', marginBottom: '0.25rem' }}>
-              Analytics
+            <span className="badge badge-purple">Mastery Dashboard</span>
+            <h1 className="chunky-heading" style={{ fontSize: 'var(--heading-xl)', color: 'var(--ink)', margin: 'var(--space-4) 0 var(--space-1)' }}>
+              {user.name}'s Analytics
             </h1>
-            <p style={{ fontSize: '0.9375rem', color: '#6B7280' }}>Deep population metrics, IRT analysis, and learning behaviour insights.</p>
+            <p style={{ fontSize: 'var(--text-base)', color: 'var(--ink-secondary)', fontWeight: 'var(--font-extrabold)' }}>
+              {user.role === 'teacher' ? 'Live class metrics from your assigned quizzes.' : 'Live learning metrics from your saved quiz attempts.'}
+            </p>
           </div>
-          {/* Period picker */}
-          <div style={{ display: 'flex', gap: '0.375rem', background: 'white', border: '1.5px solid #E5E7EB', borderRadius: '10px', padding: '0.25rem' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-1)', background: 'var(--surface)', border: '1.5px solid var(--outline)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-1)' }}>
             {PERIODS.map(p => (
               <button key={p} onClick={() => setPeriod(p)} style={{
-                border: 'none', borderRadius: '8px', padding: '0.4375rem 0.875rem', fontSize: '0.875rem', fontWeight: 600,
-                cursor: 'pointer', transition: 'all 0.15s ease',
-                background: period === p ? '#7C3AED' : 'transparent',
-                color: period === p ? 'white' : '#6B7280',
+                border: 'none', borderRadius: 'var(--radius-md)', padding: 'var(--space-3) var(--space-4)', fontSize: 'var(--text-sm)', fontWeight: 'var(--font-semibold)',
+                cursor: 'pointer', transition: 'all var(--transition-fast)',
+                background: period === p ? 'var(--primary)' : 'transparent',
+                color: period === p ? 'var(--surface)' : 'var(--muted)',
               }}>{p}</button>
             ))}
           </div>
         </div>
 
-        {/* ─── BEHAVIOURAL INSIGHTS ─── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+        {error && (
+          <div className="card" style={{ marginBottom: 'var(--space-6)', color: 'var(--error)', background: 'var(--error-soft)', borderColor: 'var(--error)' }}>
+            {error}
+          </div>
+        )}
+
+        {analytics.summary.total_questions === 0 && (
+          <div className="card" style={{ marginBottom: 'var(--space-6)', background: 'var(--warning-soft)', borderColor: 'var(--warning)' }}>
+            <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-extrabold)', color: 'var(--warning)', margin: '0 0 var(--space-1)' }}>No quiz attempts yet</h2>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--warning)', margin: 0 }}>
+              {user.role === 'teacher' ? 'Assign quizzes and have students complete them to populate this page.' : 'Take a quiz while signed in and this page will populate automatically.'}
+            </p>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
           {insights.map(ins => (
             <div key={ins.label} className="stat-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.625rem' }}>
-                <div className="icon-box" style={{ background: ins.bg, width: '2.25rem', height: '2.25rem', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
+                <div className="icon-box" style={{ background: ins.bg, width: 'var(--space-8)', height: 'var(--space-8)', borderRadius: 'var(--radius-md)' }}>
                   <ins.icon size={16} color={ins.color} />
                 </div>
-                <span style={{ fontSize: '0.8125rem', fontWeight: 500, color: '#6B7280' }}>{ins.label}</span>
+                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--font-medium)', color: 'var(--muted)' }}>{ins.label}</span>
               </div>
-              <div style={{ fontSize: '1.75rem', fontWeight: 900, color: ins.color, letterSpacing: '-0.04em', lineHeight: 1 }}>{ins.value}</div>
-              <div style={{ fontSize: '0.75rem', color: '#9CA3AF', marginTop: '0.375rem' }}>{ins.delta}</div>
+              <div style={{ fontSize: 'var(--text-3xl)', fontWeight: 'var(--font-black)', color: ins.color, letterSpacing: '-0.04em', lineHeight: 1 }}>{ins.value}</div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted-light)', marginTop: 'var(--space-1)' }}>{ins.delta}</div>
             </div>
           ))}
         </div>
 
-        {/* ─── THETA HISTORY ─── */}
-        <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <TrendingUp size={20} color="#7C3AED" />
-              <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>Population Ability (θ) Over Time</h2>
-            </div>
-            <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8125rem', color: '#6B7280' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                <span style={{ display: 'inline-block', width: '24px', height: '3px', background: '#7C3AED', borderRadius: '9999px' }} />
-                Average θ
-              </span>
-            </div>
+        <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
+            <TrendingUp size={20} color="var(--primary)" />
+            <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-bold)', color: 'var(--ink)', margin: 0 }}>Ability Theta Over Time</h2>
           </div>
           <div style={{ height: '260px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={thetaHistory} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+              <AreaChart data={filtered.theta_history} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
                 <defs>
-                  <linearGradient id="topGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#7C3AED" stopOpacity={0.08} />
-                    <stop offset="95%" stopColor="#7C3AED" stopOpacity={0} />
+                  <linearGradient id="thetaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.12} />
+                    <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                <XAxis dataKey="week" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} domain={[-1, 1.5]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-mid)" vertical={false} />
+                <XAxis dataKey="session" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--muted-light)' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--muted-light)' }} domain={[-3, 3]} />
                 <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="top" stroke="none" fill="url(#topGrad)" name="Top performer" />
-                <Area type="monotone" dataKey="bottom" stroke="none" fill="white" name="Bottom" />
-                <Line type="monotone" dataKey="avg" stroke="#7C3AED" strokeWidth={3} dot={{ r: 5, fill: '#7C3AED', stroke: 'white', strokeWidth: 2 }} name="Avg θ" />
+                <Area type="monotone" dataKey="theta" stroke="var(--primary)" strokeWidth={3} fill="url(#thetaGrad)" name="Theta" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* ─── BOTTOM 2-COL ─── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
-
-          {/* Mastery distribution */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-6)', marginBottom: 'var(--space-6)' }}>
           <div className="card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-              <BarChart2 size={20} color="#0284C7" />
-              <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>Mastery Score Distribution</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
+              <BarChart2 size={20} color="var(--info)" />
+              <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-bold)', color: 'var(--ink)', margin: 0 }}>Topic Mastery Distribution</h2>
             </div>
             <div style={{ height: '220px' }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={masteryDist} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                  <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} />
-                  <Tooltip cursor={{ fill: '#F9FAFB' }} contentStyle={{ borderRadius: '10px', border: '1px solid #E5E7EB', fontSize: '0.875rem' }} />
-                  <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={30} name="Students">
-                    {masteryDist.map((_, i) => {
-                      const colors = ['#EF4444', '#F59E0B', '#F59E0B', '#059669', '#059669'];
+                <BarChart data={filtered.mastery_distribution} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-mid)" vertical={false} />
+                  <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--muted-light)' }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--muted-light)' }} />
+                  <Tooltip cursor={{ fill: 'var(--surface-low)' }} contentStyle={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--outline)', fontSize: 'var(--text-sm)' }} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={30} name="Topics">
+                    {filtered.mastery_distribution.map((_: any, i: number) => {
+                      const colors = ['var(--error)', 'var(--warning)', 'var(--warning)', 'var(--success)', 'var(--success)'];
                       return <Cell key={i} fill={colors[i]} />;
                     })}
                   </Bar>
@@ -163,67 +213,44 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          {/* Question difficulty distribution */}
           <div className="card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-              <Target size={20} color="#D97706" />
-              <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>Item Difficulty (b) Distribution</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
+              <Target size={20} color="var(--warning)" />
+              <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-bold)', color: 'var(--ink)', margin: 0 }}>Attempt Difficulty Spread</h2>
             </div>
             <div style={{ height: '220px' }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={questionDiff} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                  <XAxis dataKey="b" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#9CA3AF' }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} />
-                  <Tooltip cursor={{ fill: '#F9FAFB' }} contentStyle={{ borderRadius: '10px', border: '1px solid #E5E7EB', fontSize: '0.875rem' }} />
-                  <Bar dataKey="count" fill="#7C3AED" radius={[6, 6, 0, 0]} barSize={26} name="Questions" />
+                <BarChart data={filtered.question_difficulty} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-mid)" vertical={false} />
+                  <XAxis dataKey="b" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--muted-light)' }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--muted-light)' }} />
+                  <Tooltip cursor={{ fill: 'var(--surface-low)' }} contentStyle={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--outline)', fontSize: 'var(--text-sm)' }} />
+                  <Bar dataKey="count" fill="var(--primary)" radius={[6, 6, 0, 0]} barSize={26} name="Questions" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <p style={{ fontSize: '0.75rem', color: '#9CA3AF', marginTop: '0.75rem', textAlign: 'center' }}>
-              Difficulty parameter b (–3 Easy → +3 Hard)
-            </p>
           </div>
         </div>
 
-        {/* ─── SESSIONS vs MASTERY ─── */}
         <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Zap size={20} color="#059669" />
-              <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>Sessions vs. Mastery Gain</h2>
-            </div>
-            <p style={{ fontSize: '0.8125rem', color: '#9CA3AF', margin: 0 }}>Diminishing returns curve showing learning velocity</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-5)' }}>
+            <Zap size={20} color="var(--success)" />
+            <h2 style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-bold)', color: 'var(--ink)', margin: 0 }}>Sessions vs. Mastery</h2>
           </div>
           <div style={{ height: '220px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={sessionLength} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                <XAxis dataKey="sessions" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} label={{ value: 'Sessions completed', position: 'insideBottom', offset: -2, fontSize: 11, fill: '#9CA3AF' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} domain={[0, 100]} />
+              <LineChart data={filtered.session_mastery} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-mid)" vertical={false} />
+                <XAxis dataKey="sessions" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--muted-light)' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--muted-light)' }} domain={[0, 100]} />
                 <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="mastery" stroke="#059669" strokeWidth={3}
-                  dot={{ r: 5, fill: '#059669', stroke: 'white', strokeWidth: 2 }}
+                <Line type="monotone" dataKey="mastery" stroke="var(--success)" strokeWidth={3}
+                  dot={{ r: 5, fill: 'var(--success)', stroke: 'var(--surface)', strokeWidth: 2 }}
                   activeDot={{ r: 7 }} name="Mastery %" />
               </LineChart>
             </ResponsiveContainer>
           </div>
-
-          {/* Insight callouts */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #F3F4F6' }}>
-            {[
-              { val: '2.1 sessions', label: 'Avg sessions to master a topic', color: '#7C3AED' },
-              { val: '87%', label: 'Plateau mastery level (20+ sessions)', color: '#059669' },
-              { val: 'Session 3–6', label: 'Highest learning velocity window', color: '#D97706' },
-            ].map(s => (
-              <div key={s.label} style={{ background: '#F9FAFB', borderRadius: '10px', padding: '0.875rem 1rem' }}>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: s.color, letterSpacing: '-0.03em' }}>{s.val}</div>
-                <div style={{ fontSize: '0.8125rem', color: '#6B7280', marginTop: '0.25rem' }}>{s.label}</div>
-              </div>
-            ))}
-          </div>
         </div>
-
       </div>
     </div>
   );

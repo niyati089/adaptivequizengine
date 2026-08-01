@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import axios, { AxiosInstance } from 'axios';
 
 export interface User {
-  id: number;
+  id?: number;
   name: string;
   email: string;
   role: 'student' | 'teacher';
@@ -15,7 +15,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, expectedRole?: 'student' | 'teacher') => Promise<void>;
   register: (name: string, email: string, password: string, role: 'student' | 'teacher') => Promise<void>;
   logout: () => void;
   api: AxiosInstance;
@@ -44,8 +44,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const storedToken = localStorage.getItem('auth_token');
     const storedUser = localStorage.getItem('auth_user');
 
-    console.log('[AuthContext] Initializing - token exists:', !!storedToken, 'user exists:', !!storedUser);
-
     if (storedToken && storedUser) {
       try {
         setToken(storedToken);
@@ -54,9 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         // Configure axios interceptor for this token
         apiInstance.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-        console.log('[AuthContext] Token set in axios instance');
       } catch (e) {
-        console.error('[AuthContext] Error parsing stored user:', e);
         // Clear corrupt state
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
@@ -65,26 +61,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, expectedRole?: 'student' | 'teacher') => {
     setIsLoading(true);
     try {
       const response = await apiInstance.post('/users/login', { email, password });
-      const { access_token, role, name, id } = response.data;
+      const { access_token, id, role, name } = response.data;
 
-      console.log('[AuthContext] Login successful, token received:', access_token.substring(0, 20) + '...');
+      if (expectedRole && role !== expectedRole) {
+        throw new Error(`This account is registered as a ${role}. Please choose ${role} to sign in.`);
+      }
 
       const newUser: User = { id, name, email, role };
       
       localStorage.setItem('auth_token', access_token);
       localStorage.setItem('auth_user', JSON.stringify(newUser));
 
-      console.log('[AuthContext] Token stored in localStorage');
-
       setToken(access_token);
       setUser(newUser);
       
       apiInstance.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-      console.log('[AuthContext] Authorization header set in apiInstance');
 
       // Redirect based on role
       if (role === 'teacher') {
@@ -93,7 +88,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         router.push('/dashboard');
       }
     } catch (error) {
-      console.error('[AuthContext] Login failed:', error);
       setIsLoading(false);
       throw error;
     } finally {

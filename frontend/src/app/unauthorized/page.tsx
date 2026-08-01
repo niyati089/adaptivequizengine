@@ -10,11 +10,11 @@ export default function UnauthorizedPage() {
 
   return (
     <div style={{
-      minHeight: 'calc(100vh - 4rem)',
+      minHeight: 'calc(100vh - 5rem)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: '#FAFAFC',
+      background: 'transparent',
       padding: '2rem 1.5rem',
     }}>
       <div style={{
