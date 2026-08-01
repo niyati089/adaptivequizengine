@@ -129,6 +129,16 @@ def get_educator_dashboard(
     for student in students_in_db:
         student_attempts = [a for a in attempts if a.user_id == student.id]
         if not student_attempts:
+            student_records.append({
+                "id": student.id,
+                "name": student.name,
+                "email": student.email,
+                "mastery": 0,
+                "theta": "0.00",
+                "velocity": "Medium",
+                "trend": "stable",
+                "topics": 0
+            })
             continue
             
         mastery = mastery_calc.calculate_mastery(student.id, topic, db=db)
