@@ -13,3 +13,4 @@ def test_explanation_route(client, mock_groq_client):
     assert "key_takeaway" in data
     assert data["explanation"] == "Mocked explanation"
     assert data["key_takeaway"] == "Mocked takeaway"
+    assert data.get("mermaid_diagram") is None

@@ -3,13 +3,8 @@ uvicorn
 sqlalchemy
 pydantic
 pydantic-settings
-redis
 psycopg2-binary
-langchain
-langgraph
 openai
-numpy
-scipy
 networkx
 pytest
 python-dotenv

@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -51,6 +53,28 @@ def get_current_teacher(current_user: User = Depends(get_current_user)) -> User:
         )
     return current_user
 
+def resolve_user_id_from_token(
+    db: Session,
+    token: Optional[str],
+    explicit_user_id: Optional[int] = None,
+) -> Optional[int]:
+    """Resolve a user id from a JWT bearer token, falling back to an explicit
+    user_id for local/test clients that don't authenticate. Shared by any
+    endpoint that wants "use the logged-in user if present, else trust the
+    caller-supplied id" semantics (e.g. quiz submission, review scheduling).
+    """
+    if token:
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            email = payload.get("sub")
+            if email:
+                user = db.query(User).filter(User.email == email).first()
+                if user:
+                    return user.id
+        except JWTError:
+            pass
+    return explicit_user_id
+
 @router.post("/register", response_model=UserResponse)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
     # Check if user already exists
@@ -89,6 +113,7 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
     return {
         "access_token": access_token,
         "token_type": "bearer",
+        "id": user.id,
         "role": user.role,
         "name": user.name,
         "email": user.email

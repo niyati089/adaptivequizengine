@@ -15,7 +15,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, expectedRole?: 'student' | 'teacher') => Promise<void>;
   register: (name: string, email: string, password: string, role: 'student' | 'teacher') => Promise<void>;
   logout: () => void;
   api: AxiosInstance;
@@ -61,13 +61,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, expectedRole?: 'student' | 'teacher') => {
     setIsLoading(true);
     try {
       const response = await apiInstance.post('/users/login', { email, password });
-      const { access_token, role, name } = response.data;
+      const { access_token, id, role, name } = response.data;
 
-      const newUser: User = { name, email, role };
+      if (expectedRole && role !== expectedRole) {
+        throw new Error(`This account is registered as a ${role}. Please choose ${role} to sign in.`);
+      }
+
+      const newUser: User = { id, name, email, role };
       
       localStorage.setItem('auth_token', access_token);
       localStorage.setItem('auth_user', JSON.stringify(newUser));
