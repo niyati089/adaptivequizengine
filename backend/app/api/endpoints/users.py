@@ -116,7 +116,8 @@ def login(user_in: UserLogin, db: Session = Depends(get_db)):
         "id": user.id,
         "role": user.role,
         "name": user.name,
-        "email": user.email
+        "email": user.email,
+        "id": user.id,
     }
 
 @router.get("/me", response_model=UserResponse)
