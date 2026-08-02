@@ -23,6 +23,14 @@ interface QuestionRecord {
 
 const TOTAL_QUESTIONS = 12;
 
+interface QuestionRecord {
+  question: string;
+  subtopic: string;
+  concept: string;
+  correct: boolean;
+  bloomLevel: string;
+}
+
 function QuizContent() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
@@ -46,7 +54,6 @@ function QuizContent() {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [timer, setTimer] = useState(60);
-  const [score, setScore] = useState(0);
   const [isGenLoading, setIsGenLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<any>(null);
@@ -767,9 +774,28 @@ function QuizContent() {
     const accuracyPct = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
 
     const wrongRecords = questionHistory.filter(r => !r.correct);
-    const focusConcepts = Array.from(new Set(wrongRecords.map(r => r.concept)));
+
+    // Smart Deduplication for LLM-generated similar concepts (Gayatri: Added prerequisite quizes)
+    let focusConceptsList: {original: string, norm: string, subtopic: string}[] = [];
+    wrongRecords.forEach(r => {
+      if (!r.concept) return;
+      let norm = r.concept.replace(/\([^)]*\)/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (norm.endsWith('s') && !norm.endsWith('ss')) norm = norm.slice(0, -1);
+      if (!norm) return;
+
+      let dupIdx = focusConceptsList.findIndex(item => item.norm.includes(norm) || norm.includes(item.norm));
+      if (dupIdx !== -1) {
+        if (norm.length < focusConceptsList[dupIdx].norm.length) {
+          focusConceptsList[dupIdx] = { original: r.concept, norm, subtopic: r.subtopic };
+        }
+      } else {
+        focusConceptsList.push({ original: r.concept, norm, subtopic: r.subtopic });
+      }
+    });
+
+    const focusConcepts = focusConceptsList.map(item => item.original);
     const conceptSubtopicMap: Record<string, string> = {};
-    wrongRecords.forEach(r => { if (!conceptSubtopicMap[r.concept]) conceptSubtopicMap[r.concept] = r.subtopic; });
+    focusConceptsList.forEach(item => { conceptSubtopicMap[item.original] = item.subtopic; });
 
     const wrongBloomLevels = questionHistory
       .filter(r => !r.correct)
