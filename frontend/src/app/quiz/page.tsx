@@ -12,6 +12,8 @@ import { useProctoring } from "@/hooks/useProctoring";
 import { ProctoringPreview } from "@/components/proctoring/ProctoringPreview";
 import { ProctoringWarningModal } from "@/components/proctoring/ProctoringWarningModal";
 import { Modal } from "@/components/shared/Modal";
+import { SocraticHintPanel } from "@/components/quiz/SocraticHintPanel";
+import { api } from "@/services/api";
 
 interface QuestionRecord {
   question: string;
@@ -99,10 +101,15 @@ function QuizContent() {
   const [aiExample, setAiExample] = useState("");
   const [aiCommonMistake, setAiCommonMistake] = useState("");
   
-  // Hint states
+  // Hint states (legacy 2-level)
   const [hintLevel, setHintLevel] = useState(1);
   const [aiHint2, setAiHint2] = useState("");
   const [hint2Loading, setHint2Loading] = useState(false);
+
+  // 5-level advanced Socratic hint session state
+  const [socraticSession, setSocraticSession] = useState<any>(null);
+  const [isLoadingAdvancedHint, setIsLoadingAdvancedHint] = useState(false);
+  const [advancedHintError, setAdvancedHintError] = useState<string | undefined>();
   
   // Initialize proctoring hook with enabled state
   const proctoring = useProctoring(proctoringEnabled);
@@ -489,26 +496,60 @@ function QuizContent() {
   const handleRevealHint = async (level: number = 1) => {
     if (!q) return;
     setShowHint(true);
-    
-    if (level === 1) {
-      setHintLevel(1);
+
+    // Use advanced 5-level Socratic hint system for the first hint
+    if (level === 1 && !socraticSession) {
+      const sessionId = `hint_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      setIsLoadingAdvancedHint(true);
+      setAdvancedHintError(undefined);
       setHintLoading(true);
       try {
-        const res = await getSocraticHint({
+        const response = await api.post('/socratic-advanced/hint-adaptive', {
           question: q.question,
           user_answer: selected !== null ? q.options[selected] : "I don't know",
           correct_answer: q.options[q.correct],
           confidence: 3,
-          hint_level: 1
+          theta: theta,
+          session_id: sessionId,
         });
-        setAiHint(res.hint || q.hint || "Try breaking down the question's terms.");
-      } catch (e) {
-        console.error("Failed to fetch Socratic hint 1:", e);
-        setAiHint(q.hint || "Think about the core concept.");
+        const hintData = response.data;
+        const newSession = {
+          session_id: sessionId,
+          question: q.question,
+          correct_answer: q.options[q.correct],
+          hints: [hintData],
+          misconception: hintData.misconception,
+        };
+        setSocraticSession(newSession);
+        // Also populate legacy aiHint for compatibility
+        setAiHint(hintData.hint || q.hint || "Try breaking down the question's terms.");
+        setHintLevel(1);
+      } catch (e: any) {
+        const errorMsg = e?.response?.data?.detail || e?.message || 'Failed to get hint';
+        setAdvancedHintError(errorMsg);
+        console.error("Failed to fetch advanced Socratic hint:", e);
+        // Fallback to legacy hint
+        try {
+          const res = await getSocraticHint({
+            question: q.question,
+            user_answer: selected !== null ? q.options[selected] : "I don't know",
+            correct_answer: q.options[q.correct],
+            confidence: 3,
+            hint_level: 1
+          });
+          setAiHint(res.hint || q.hint || "Try breaking down the question's terms.");
+        } catch {
+          setAiHint(q.hint || "Think about the core concept.");
+        }
       } finally {
         setHintLoading(false);
+        setIsLoadingAdvancedHint(false);
       }
-    } else {
+      return;
+    }
+
+    // Legacy level-2 hint (used only when advanced session is not available)
+    if (level === 2 && !socraticSession) {
       setHintLevel(2);
       setHint2Loading(true);
       try {
@@ -526,6 +567,48 @@ function QuizContent() {
       } finally {
         setHint2Loading(false);
       }
+    }
+  };
+
+  const handleEscalateHint = async () => {
+    if (!socraticSession?.session_id || !q) return;
+    setIsLoadingAdvancedHint(true);
+    setAdvancedHintError(undefined);
+    try {
+      const response = await api.post(`/socratic-advanced/hint-escalate?session_id=${socraticSession.session_id}`, {
+        question: socraticSession.question,
+        user_answer: selected !== null ? q.options[selected] : "I don't know",
+        correct_answer: socraticSession.correct_answer,
+        confidence: 3,
+        theta: theta,
+      });
+      const hintData = response.data;
+      setSocraticSession((prev: any) => ({
+        ...prev,
+        hints: [...prev.hints, hintData],
+        misconception: hintData.misconception || prev.misconception,
+      }));
+    } catch (e: any) {
+      const errorMsg = e?.response?.data?.detail || e?.message || 'Failed to escalate hint';
+      setAdvancedHintError(errorMsg);
+      console.error("Failed to escalate hint:", e);
+    } finally {
+      setIsLoadingAdvancedHint(false);
+    }
+  };
+
+  const handleTrackHintOutcome = async (helpful: boolean) => {
+    if (!socraticSession?.hints || socraticSession.hints.length === 0) return;
+    const lastHint = socraticSession.hints[socraticSession.hints.length - 1];
+    try {
+      await api.post('/socratic-advanced/hint-outcome', {
+        hint_id: lastHint.hint_id,
+        did_help: helpful,
+        time_to_understand: 5,
+        hint_level: lastHint.hint_level,
+      });
+    } catch (e) {
+      console.error('Error tracking hint outcome:', e);
     }
   };
 
@@ -636,6 +719,11 @@ function QuizContent() {
     setAiHint("");
     setAiHint2("");
     setHintLevel(1);
+    if (socraticSession?.session_id) {
+      api.delete(`/socratic-advanced/session/${socraticSession.session_id}`).catch(() => {});
+    }
+    setSocraticSession(null);
+    setAdvancedHintError(undefined);
     setShowExplanation(false);
     setAiDiagramUrl("");
     setAiDiagramSyntax(null);
@@ -1455,10 +1543,22 @@ function QuizContent() {
                     <Lightbulb size={18} color="var(--warning)" />
                     <h4 style={{ margin: 0, fontWeight: "var(--font-bold)" }}>Need Help?</h4>
                   </div>
-                  
-                  {hintLoading ? (
-                    <DancingSquares size="sm" inline label="AI is generating Hint 1..." />
+
+                  {(hintLoading || isLoadingAdvancedHint) && !socraticSession ? (
+                    <DancingSquares size="sm" inline label="AI is generating hint..." />
+                  ) : socraticSession?.hints && socraticSession.hints.length > 0 ? (
+                    /* 5-level Socratic Hint Panel */
+                    <SocraticHintPanel
+                      hints={socraticSession.hints}
+                      misconception={socraticSession.misconception}
+                      canEscalate={socraticSession.hints.length < 5 && socraticSession.hints[socraticSession.hints.length - 1]?.next_level_available}
+                      isLoading={isLoadingAdvancedHint}
+                      error={advancedHintError}
+                      onEscalateHint={handleEscalateHint}
+                      onTrackOutcome={handleTrackHintOutcome}
+                    />
                   ) : aiHint ? (
+                    /* Fallback: simple hint display */
                     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
                       <div style={{ padding: "var(--space-3)", background: "var(--warning-soft)", border: "1px solid var(--warning)", borderRadius: "var(--radius-lg)" }}>
                         <div style={{ fontSize: "var(--text-xs)", fontWeight: "var(--font-bold)", color: "var(--warning)", marginBottom: "4px" }}>HINT 1</div>
