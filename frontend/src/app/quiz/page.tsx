@@ -652,19 +652,8 @@ function QuizContent() {
     if (proctoringEnabled) {
       proctoring.stop();
     }
-    
-    const params = new URLSearchParams({
-      topic: inputTopic,
-      subtopic: selectedSubtopic || "General",
-      correct: String(score),
-      total: String(qIndex + 1),
-      startTheta: startTheta.toFixed(2),
-      endTheta: theta.toFixed(2),
-    });
-    if (misconceptionTags.length > 0) {
-      params.set("misconceptions", misconceptionTags.join(","));
-    }
-    router.push(`/quiz/results?${params.toString()}`);
+    // Show Gayatri's in-page results screen (concepts to focus on + targeted quiz)
+    setQuizState('results');
   };
 
   // Clean up camera on unmount or when quiz state changes
@@ -1314,7 +1303,7 @@ function QuizContent() {
                     flex: 2,
                     padding: "var(--space-2) var(--space-4)",
                     fontSize: "var(--text-xs)",
-                    background: "var(--primary)",
+                    background: qIndex + 1 >= TOTAL_QUESTIONS ? "#059669" : "var(--primary)",
                     color: "white",
                     fontWeight: "var(--font-black)",
                     display: "flex",
@@ -1324,8 +1313,11 @@ function QuizContent() {
                     borderRadius: "var(--radius-md)"
                   }}
                 >
-                  <span>🟣 Next Adaptive Question</span>
-                  <ChevronRight size={14} />
+                  {qIndex + 1 >= TOTAL_QUESTIONS ? (
+                    <><Trophy size={14} /><span>See Results</span></>
+                  ) : (
+                    <><span>🟣 Next Adaptive Question</span><ChevronRight size={14} /></>
+                  )}
                 </button>
               </div>
             </div>
