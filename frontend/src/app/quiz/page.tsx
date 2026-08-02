@@ -70,6 +70,7 @@ function QuizContent() {
   const [showSidebarDiagram, setShowSidebarDiagram] = useState(false);
 
   // Results states
+  const [score, setScore] = useState(0);
   const [questionHistory, setQuestionHistory] = useState<QuestionRecord[]>([]);
 
   const [askedQuestions, setAskedQuestions] = useState<string[]>([]);
