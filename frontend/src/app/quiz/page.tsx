@@ -21,7 +21,7 @@ interface QuestionRecord {
   bloomLevel: string;
 }
 
-const TOTAL_QUESTIONS = 12;
+
 
 interface QuestionRecord {
   question: string;
@@ -63,6 +63,10 @@ function QuizContent() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [expLoading, setExpLoading] = useState(false);
   const [aiExplanation, setAiExplanation] = useState("");
+
+  const isClassroomQuiz = !!classroomQuizId;
+  const targetQuestions = isClassroomQuiz ? (classQuiz?.num_questions || 10) : null;
+  const canEndTest = !isClassroomQuiz && qIndex >= 9;
   
   // Diagram states
   const [aiDiagramSyntax, setAiDiagramSyntax] = useState<string | null>(null);
@@ -639,10 +643,11 @@ function QuizContent() {
     setAiExample("");
     setAiCommonMistake("");
     setShowSidebarDiagram(false);
-    setQIndex((i) => i + 1);
-    if (qIndex + 1 >= TOTAL_QUESTIONS) {
+    const nextIndex = qIndex + 1;
+    if (isClassroomQuiz && targetQuestions && nextIndex >= targetQuestions) {
       finishQuiz();
     } else {
+      setQIndex(nextIndex);
       fetchNextQuestion(theta);
     }
   };
@@ -995,9 +1000,10 @@ function QuizContent() {
   if (isGenLoading || !q) return <LoadingState label="Generating next adaptive question..." />;
 
   const timerColor = timer > 20 ? "var(--success)" : timer > 10 ? "var(--warning)" : "var(--coral)";
-  const progress = Math.min(100, ((qIndex + 1) / TOTAL_QUESTIONS) * 100);
+  const progress = isClassroomQuiz && targetQuestions
+    ? Math.min(100, ((qIndex + 1) / targetQuestions) * 100)
+    : Math.min(100, ((qIndex + 1) / 10) * 100);
   const correct = feedback?.correct || selected === q.correct;
-  const canEndTest = qIndex >= 9;
 
   const currentDifficultyLabel = difficulty < -1.5 ? "easy" : difficulty < 0.5 ? "medium" : "hard";
 
@@ -1007,7 +1013,12 @@ function QuizContent() {
       <div className="card" style={{ marginBottom: "var(--space-6)", display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "var(--space-4)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <span style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-black)" }}>Question {qIndex + 1}/{TOTAL_QUESTIONS}</span>
+            <span style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-black)" }}>
+              {isClassroomQuiz && targetQuestions 
+                ? `Question ${qIndex + 1}/${targetQuestions}` 
+                : `Question ${qIndex + 1}`
+              }
+            </span>
             <span style={{ color: "var(--muted)", fontSize: "var(--text-sm)" }}>({inputTopic})</span>
           </div>
           
@@ -1028,25 +1039,34 @@ function QuizContent() {
               </div>
             </div>
 
-            <button
-              onClick={handleEndTest}
-              disabled={!canEndTest}
-              title={canEndTest ? "End test and see results" : `Complete at least ${10 - (qIndex + 1) + (submitted ? 1 : 0)} more question(s) to end`}
-              style={{
-                background: canEndTest ? "#DC2626" : "var(--surface-high)",
-                color: canEndTest ? "white" : "var(--muted)",
-                border: "1px solid var(--outline)",
-                borderRadius: "var(--radius-md)",
-                padding: "var(--space-2) var(--space-3)",
-                fontSize: "var(--text-xs)",
-                fontWeight: "var(--font-extrabold)",
-                cursor: canEndTest ? "pointer" : "not-allowed",
-                whiteSpace: "nowrap",
-                transition: "all var(--transition-fast) ease",
-              }}
-            >
-              {canEndTest ? "🏁 End Test" : `End Test (${Math.max(0, 10 - (qIndex + 1))} left)`}
-            </button>
+            {!isClassroomQuiz ? (
+              <button
+                onClick={handleEndTest}
+                disabled={!canEndTest}
+                title={canEndTest ? "End test and see results" : `Complete at least ${10 - (qIndex + 1) + (submitted ? 1 : 0)} more question(s) to end`}
+                style={{
+                  background: canEndTest ? "#DC2626" : "var(--surface-high)",
+                  color: canEndTest ? "white" : "var(--muted)",
+                  border: "1px solid var(--outline)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "var(--space-2) var(--space-3)",
+                  fontSize: "var(--text-xs)",
+                  fontWeight: "var(--font-extrabold)",
+                  cursor: canEndTest ? "pointer" : "not-allowed",
+                  whiteSpace: "nowrap",
+                  transition: "all var(--transition-fast) ease",
+                }}
+              >
+                {canEndTest ? "🏁 End Test" : `End Test (${Math.max(0, 10 - (qIndex + 1))} left)`}
+              </button>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", padding: "var(--space-1) var(--space-3)", background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.2)", borderRadius: "var(--radius-full)" }}>
+                <Shield size={14} color="#DC2626" />
+                <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--font-extrabold)", color: "#DC2626" }}>
+                  Classroom Assignment
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="progress-track" style={{ height: "8px" }}>
@@ -1303,21 +1323,21 @@ function QuizContent() {
                     flex: 2,
                     padding: "var(--space-2) var(--space-4)",
                     fontSize: "var(--text-xs)",
-                    background: qIndex + 1 >= TOTAL_QUESTIONS ? "#059669" : "var(--primary)",
-                    color: "white",
-                    fontWeight: "var(--font-black)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "var(--space-2)",
-                    borderRadius: "var(--radius-md)"
-                  }}
-                >
-                  {qIndex + 1 >= TOTAL_QUESTIONS ? (
-                    <><Trophy size={14} /><span>See Results</span></>
-                  ) : (
-                    <><span>🟣 Next Adaptive Question</span><ChevronRight size={14} /></>
-                  )}
+                  background: (isClassroomQuiz && targetQuestions && qIndex + 1 >= targetQuestions) ? "#059669" : "var(--primary)",
+                  color: "white",
+                  fontWeight: "var(--font-black)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "var(--space-2)",
+                  borderRadius: "var(--radius-md)"
+                }}
+              >
+                {isClassroomQuiz && targetQuestions && qIndex + 1 >= targetQuestions ? (
+                  <><Trophy size={14} /><span>See Results</span></>
+                ) : (
+                  <><span>🟣 Next Adaptive Question</span><ChevronRight size={14} /></>
+                )}
                 </button>
               </div>
             </div>
