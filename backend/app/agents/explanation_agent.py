@@ -49,6 +49,7 @@ Strict Mermaid Syntax Rules (Crucial!):
 2. You MUST enclose ALL node labels in double quotes inside the shape brackets. For example: A["Label text here"] or B("Another label"). NEVER omit the double quotes for labels.
 3. Always use double-dashes `-->` for connections. NEVER use single-dash `->`.
 4. Do not include markdown code block backticks (```mermaid) inside the JSON value.
+5. Every statement must be on a new line. Do NOT use commas (,) to separate statements or end lines.
 """
         response = await self.client.chat.completions.create(
             model=config.GROQ_MODEL,

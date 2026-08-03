@@ -22,6 +22,52 @@ function getMermaid() {
   return mermaidInitPromise;
 }
 
+function sanitizeMermaidFrontend(input: string): string {
+  if (!input) return "";
+  const cleanedInput = input.replace(/```mermaid/gi, "").replace(/```/g, "").trim();
+
+  const lines = cleanedInput.split("\n");
+  const resultLines: string[] = [];
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+
+    const parts: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    let inBracket = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') inQuotes = !inQuotes;
+      else if (["[", "(", "{"].includes(char) && !inQuotes) inBracket = true;
+      else if (["]", ")", "}"].includes(char) && !inQuotes) inBracket = false;
+
+      if (char === "," && !inQuotes && !inBracket) {
+        if (current.trim()) parts.push(current.trim());
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    if (current.trim()) parts.push(current.trim());
+
+    for (let part of parts) {
+      part = part.replace(/,+$/, "").trim();
+      if (part) resultLines.push(part);
+    }
+  }
+
+  let finalSyntax = resultLines.join("\n");
+  const headers = ["graph td", "graph lr", "flowchart td", "flowchart lr", "sequencediagram", "classdiagram", "statediagram"];
+  const lower = finalSyntax.toLowerCase();
+  if (!headers.some((h) => lower.startsWith(h))) {
+    finalSyntax = "flowchart TD\n" + finalSyntax;
+  }
+  return finalSyntax;
+}
+
 export function MermaidDiagram({ syntax }: MermaidDiagramProps) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -39,8 +85,10 @@ export function MermaidDiagram({ syntax }: MermaidDiagramProps) {
     setLoading(true);
     setError(false);
 
+    const sanitizedSyntax = sanitizeMermaidFrontend(syntax);
+
     getMermaid()
-      .then((mermaid) => mermaid.render(`mermaid-${reactId}-${Date.now()}`, syntax))
+      .then((mermaid) => mermaid.render(`mermaid-${reactId}-${Date.now()}`, sanitizedSyntax))
       .then(({ svg: renderedSvg }) => {
         if (!cancelled) setSvg(renderedSvg);
       })
