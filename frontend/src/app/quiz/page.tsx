@@ -3,7 +3,7 @@
 import React, { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BarChart2, CheckCircle, ChevronRight, Clock, Lightbulb, XCircle, AlertTriangle, Loader2, Trophy, Target, Brain, Home, RotateCcw, ChevronDown, Flame, Shield, BookOpen, Sparkles, Camera, TrendingUp } from "lucide-react";
+import { BarChart2, CheckCircle, ChevronRight, Clock, Lightbulb, XCircle, AlertTriangle, Loader2, Trophy, Target, Brain, Home, RotateCcw, ChevronDown, Flame, Shield, BookOpen, Sparkles, Camera, TrendingUp, Lock } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { generateQuestion, generateTopicDag, getClassQuiz, getExplanation, getSocraticHint, recordProctoringEvent, scheduleReview, submitAnswer } from "@/services/quizService";
 import { DancingSquares } from "@/components/shared/DancingSquares";
@@ -1526,7 +1526,7 @@ function QuizContent() {
  </div>
  ) : (
  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "260px", textAlign: "center", gap: "var(--space-3)" }}>
- <span style={{ fontSize: "3rem" }}></span>
+ <Lock size={40} color="var(--muted)" style={{ marginBottom: "var(--space-1)" }} />
  <h4 style={{ margin: 0, fontWeight: "var(--font-bold)" }}>Explanation Locked</h4>
  <p style={{ fontSize: "var(--text-xs)", color: "var(--muted)", margin: 0, maxWidth: "220px" }}>
  Submit your answer to unlock the AI explanation, key takeaways, and real-world examples.
@@ -1536,80 +1536,14 @@ function QuizContent() {
  </div>
  )}
 
- {/* HINT TAB */}
- {activeTab === "hint" && (
- <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)", animation: "fadeIn var(--transition-fast) ease" }}>
- <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
- <Lightbulb size={18} color="var(--warning)" />
- <h4 style={{ margin: 0, fontWeight: "var(--font-bold)" }}>Need Help?</h4>
- </div>
-
- {(hintLoading || isLoadingAdvancedHint) && !socraticSession ? (
- <DancingSquares size="sm" inline label="AI is generating hint..." />
- ) : socraticSession?.hints && socraticSession.hints.length > 0 ? (
- /* 5-level Socratic Hint Panel */
- <SocraticHintPanel
- hints={socraticSession.hints}
- misconception={socraticSession.misconception}
- canEscalate={socraticSession.hints.length < 5 && socraticSession.hints[socraticSession.hints.length - 1]?.next_level_available}
- isLoading={isLoadingAdvancedHint}
- error={advancedHintError}
- onEscalateHint={handleEscalateHint}
- onTrackOutcome={handleTrackHintOutcome}
- />
- ) : aiHint ? (
- /* Fallback: simple hint display */
- <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
- <div style={{ padding: "var(--space-3)", background: "var(--warning-soft)", border: "1px solid var(--warning)", borderRadius: "var(--radius-lg)" }}>
- <div style={{ fontSize: "var(--text-xs)", fontWeight: "var(--font-bold)", color: "var(--warning)", marginBottom: "4px" }}>HINT 1</div>
- <p style={{ fontSize: "var(--text-sm)", color: "var(--muted)", margin: 0, lineHeight: "var(--leading-relaxed)" }}>{aiHint}</p>
- </div>
-
- {hintLevel === 1 && (
- <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "var(--space-2)" }}>
- <span style={{ color: "var(--outline)", fontSize: "1.2rem" }}>↓</span>
- <button
- onClick={() => handleRevealHint(2)}
- className="neo-btn neo-btn-secondary"
- style={{ width: "100%", fontSize: "var(--text-xs)" }}
- >
- Still stuck? Reveal Hint 2
- </button>
- </div>
- )}
-
- {hint2Loading ? (
- <DancingSquares size="sm" inline label="AI is generating Hint 2..." />
- ) : aiHint2 ? (
- <div style={{ padding: "var(--space-3)", background: "var(--warning-soft)", border: "1px solid var(--warning)", borderRadius: "var(--radius-lg)", animation: "fadeIn var(--transition-fast) ease" }}>
- <div style={{ fontSize: "var(--text-xs)", fontWeight: "var(--font-bold)", color: "var(--warning)", marginBottom: "4px" }}>HINT 2</div>
- <p style={{ fontSize: "var(--text-sm)", color: "var(--muted)", margin: 0, lineHeight: "var(--leading-relaxed)" }}>{aiHint2}</p>
- </div>
- ) : null}
- </div>
- ) : (
- <div>
- <p style={{ fontSize: "var(--text-sm)", color: "var(--muted)", margin: "0 0 var(--space-4)" }}>
- Stuck on this question? Ask the AI Tutor for a progressive Socratic hint to help guide your reasoning.
- </p>
- <button
- onClick={() => handleRevealHint(1)}
- className="neo-btn neo-btn-secondary"
- style={{ width: "100%" }}
- >
- Reveal Hint
- </button>
- </div>
- )}
- </div>
- )}
+...
 
  {/* DIAGRAM TAB */}
  {activeTab === "visual" && (
  <div style={{ animation: "fadeIn var(--transition-fast) ease" }}>
  {!submitted ? (
  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "260px", textAlign: "center", gap: "var(--space-3)" }}>
- <span style={{ fontSize: "3rem" }}></span>
+ <Lock size={40} color="var(--muted)" style={{ marginBottom: "var(--space-1)" }} />
  <h4 style={{ margin: 0, fontWeight: "var(--font-bold)" }}>Diagram Locked</h4>
  <p style={{ fontSize: "var(--text-xs)", color: "var(--muted)", margin: 0, maxWidth: "220px" }}>
  Submit your answer to view the concept's workflow or visual schema.
