@@ -49,6 +49,7 @@ class ClassroomQuiz(Base):
     enable_anti_cheating = Column(Boolean, default=False, nullable=False)
     enable_proctoring = Column(Boolean, default=False, nullable=False)
     max_proctoring_warnings = Column(Integer, default=3, nullable=False)
+    num_questions = Column(Integer, default=10, nullable=False)
     created_at = Column(DateTime, default=utcnow)
 
     classroom = relationship("Classroom", back_populates="quizzes")

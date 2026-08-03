@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from app.api.endpoints import quiz, users, educators, analytics, dag, misconceptions, classes, proctoring
-from app.api.routes import socratic, explanation, review
+from app.api.routes import socratic, explanation, review, socratic_advanced
 
 api_router = APIRouter()
 api_router.include_router(quiz.router, prefix="/quiz", tags=["quiz"])
@@ -12,5 +12,6 @@ api_router.include_router(misconceptions.router, prefix="/misconceptions", tags=
 api_router.include_router(classes.router, prefix="/classes", tags=["classes"])
 api_router.include_router(proctoring.router, prefix="/proctoring", tags=["proctoring"])
 api_router.include_router(socratic.router, prefix="/socratic", tags=["socratic"])
+api_router.include_router(socratic_advanced.router, prefix="/socratic-advanced", tags=["socratic-advanced"])
 api_router.include_router(explanation.router, prefix="/explanation", tags=["explanation"])
 api_router.include_router(review.router, prefix="/review", tags=["review"])

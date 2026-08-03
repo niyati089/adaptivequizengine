@@ -39,7 +39,7 @@ export default function ClassesPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [classForm, setClassForm] = useState({ name: '', subject: '', description: '' });
-  const [quizForm, setQuizForm] = useState({ title: '', topic: '', subtopic: 'General', bloom_level: 'Remembering', starting_difficulty: 0, enable_anti_cheating: false, enable_proctoring: false, max_proctoring_warnings: 3 });
+  const [quizForm, setQuizForm] = useState({ title: '', topic: '', subtopic: 'General', bloom_level: 'Remembering', starting_difficulty: 0, enable_anti_cheating: false, enable_proctoring: false, max_proctoring_warnings: 3, num_questions: 10 });
   const [viewingProctoringQuizId, setViewingProctoringQuizId] = useState<number | null>(null);
 
   const selectedClass = classes.find(item => item.id === selectedClassId) || classes[0];
@@ -83,7 +83,7 @@ export default function ClassesPage() {
     e.preventDefault();
     if (!selectedClass || !quizForm.title.trim() || !quizForm.topic.trim()) return;
     await createClassQuiz(selectedClass.id, quizForm);
-    setQuizForm({ title: '', topic: '', subtopic: 'General', bloom_level: 'Remembering', starting_difficulty: 0, enable_anti_cheating: false, enable_proctoring: false, max_proctoring_warnings: 3 });
+    setQuizForm({ title: '', topic: '', subtopic: 'General', bloom_level: 'Remembering', starting_difficulty: 0, enable_anti_cheating: false, enable_proctoring: false, max_proctoring_warnings: 3, num_questions: 10 });
     load();
   };
 
@@ -238,10 +238,11 @@ export default function ClassesPage() {
               <div className="card">
                 <h3 style={{ fontWeight: 'var(--font-black)', fontSize: 'var(--text-base)', margin: '0 0 var(--space-4)' }}>Adaptive Quizzes</h3>
                 <form onSubmit={handleCreateQuiz} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr auto', gap: 'var(--space-2)' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 0.8fr auto', gap: 'var(--space-2)' }}>
                     <input value={quizForm.title} onChange={e => setQuizForm({ ...quizForm, title: e.target.value })} placeholder="Quiz title" style={inputStyle} />
                     <input value={quizForm.topic} onChange={e => setQuizForm({ ...quizForm, topic: e.target.value })} placeholder="Topic" style={inputStyle} />
                     <input value={quizForm.subtopic} onChange={e => setQuizForm({ ...quizForm, subtopic: e.target.value })} placeholder="Subtopic" style={inputStyle} />
+                    <input type="number" value={quizForm.num_questions} onChange={e => setQuizForm({ ...quizForm, num_questions: parseInt(e.target.value) || 10 })} placeholder="Questions" min="1" max="100" style={inputStyle} />
                     <button type="submit" style={{ border: 'none', borderRadius: 'var(--radius-md)', background: 'var(--primary)', color: 'var(--surface)', fontWeight: 'var(--font-extrabold)', padding: '0 var(--space-4)' }}>Add</button>
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer', userSelect: 'none', fontSize: 'var(--text-sm)', fontWeight: 'var(--font-bold)', color: 'var(--ink-secondary)' }}>
@@ -281,7 +282,7 @@ export default function ClassesPage() {
                           </span>
                         )}
                       </div>
-                      <div style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>{quiz.topic} · {quiz.subtopic}</div>
+                      <div style={{ color: 'var(--muted)', fontSize: 'var(--text-xs)' }}>{quiz.topic} · {quiz.subtopic} · {quiz.num_questions || 10} questions</div>
                     </div>
                     <span style={{ color: 'var(--muted)', fontSize: 'var(--text-sm)' }}>{quiz.attempts} attempts</span>
                     <span style={{ color: 'var(--success)', fontWeight: 'var(--font-extrabold)' }}>{quiz.accuracy}%</span>

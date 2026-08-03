@@ -35,6 +35,7 @@ class QuizCreate(BaseModel):
     enable_anti_cheating: Optional[bool] = False
     enable_proctoring: Optional[bool] = False
     max_proctoring_warnings: Optional[int] = 3
+    num_questions: Optional[int] = 10
 
 
 class QuizUpdate(BaseModel):
@@ -46,6 +47,7 @@ class QuizUpdate(BaseModel):
     enable_anti_cheating: Optional[bool] = None
     enable_proctoring: Optional[bool] = None
     max_proctoring_warnings: Optional[int] = None
+    num_questions: Optional[int] = None
 
 
 def _require_owner(classroom_id: int, teacher: User, db: Session) -> Classroom:
@@ -288,6 +290,7 @@ def create_quiz(
         enable_anti_cheating=payload.enable_anti_cheating or False,
         enable_proctoring=payload.enable_proctoring or False,
         max_proctoring_warnings=payload.max_proctoring_warnings or 3,
+        num_questions=payload.num_questions or 10,
     )
     db.add(quiz)
     db.commit()
@@ -363,6 +366,7 @@ def _quiz_payload(quiz: ClassroomQuiz):
         "enable_anti_cheating": bool(quiz.enable_anti_cheating),
         "enable_proctoring": bool(quiz.enable_proctoring),
         "max_proctoring_warnings": quiz.max_proctoring_warnings or 3,
+        "num_questions": quiz.num_questions or 10,
     }
 
 

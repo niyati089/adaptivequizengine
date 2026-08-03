@@ -57,6 +57,7 @@ def _run_lightweight_migrations() -> None:
         "enable_anti_cheating": "BOOLEAN DEFAULT FALSE",
         "enable_proctoring": "BOOLEAN DEFAULT FALSE",
         "max_proctoring_warnings": "INTEGER DEFAULT 3",
+        "num_questions": "INTEGER DEFAULT 10",
     })
     
     # Proctoring events migration

@@ -113,7 +113,7 @@ Calibration guide:
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=500, detail=f"JSON parse error: {e}")
 
-    # Optionally pass along an empty hint so frontend doesn't break
+    # Ensure fallback fields so frontend never breaks
     if "hint" not in data:
         data["hint"] = "Think critically about the options presented."
 

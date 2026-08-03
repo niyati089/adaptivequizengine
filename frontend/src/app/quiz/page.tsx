@@ -12,6 +12,8 @@ import { useProctoring } from "@/hooks/useProctoring";
 import { ProctoringPreview } from "@/components/proctoring/ProctoringPreview";
 import { ProctoringWarningModal } from "@/components/proctoring/ProctoringWarningModal";
 import { Modal } from "@/components/shared/Modal";
+import { SocraticHintPanel } from "@/components/quiz/SocraticHintPanel";
+import { api } from "@/services/api";
 
 interface QuestionRecord {
   question: string;
@@ -21,7 +23,15 @@ interface QuestionRecord {
   bloomLevel: string;
 }
 
-const TOTAL_QUESTIONS = 12;
+
+
+interface QuestionRecord {
+  question: string;
+  subtopic: string;
+  concept: string;
+  correct: boolean;
+  bloomLevel: string;
+}
 
 function QuizContent() {
   const { user, isLoading } = useAuth();
@@ -46,7 +56,6 @@ function QuizContent() {
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [timer, setTimer] = useState(60);
-  const [score, setScore] = useState(0);
   const [isGenLoading, setIsGenLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<any>(null);
@@ -56,6 +65,10 @@ function QuizContent() {
   const [showExplanation, setShowExplanation] = useState(false);
   const [expLoading, setExpLoading] = useState(false);
   const [aiExplanation, setAiExplanation] = useState("");
+
+  const isClassroomQuiz = !!classroomQuizId;
+  const targetQuestions = isClassroomQuiz ? (classQuiz?.num_questions || 10) : null;
+  const canEndTest = !isClassroomQuiz && qIndex >= 9;
   
   // Diagram states
   const [aiDiagramSyntax, setAiDiagramSyntax] = useState<string | null>(null);
@@ -63,6 +76,7 @@ function QuizContent() {
   const [showSidebarDiagram, setShowSidebarDiagram] = useState(false);
 
   // Results states
+  const [score, setScore] = useState(0);
   const [questionHistory, setQuestionHistory] = useState<QuestionRecord[]>([]);
 
   const [askedQuestions, setAskedQuestions] = useState<string[]>([]);
@@ -87,10 +101,15 @@ function QuizContent() {
   const [aiExample, setAiExample] = useState("");
   const [aiCommonMistake, setAiCommonMistake] = useState("");
   
-  // Hint states
+  // Hint states (legacy 2-level)
   const [hintLevel, setHintLevel] = useState(1);
   const [aiHint2, setAiHint2] = useState("");
   const [hint2Loading, setHint2Loading] = useState(false);
+
+  // 5-level advanced Socratic hint session state
+  const [socraticSession, setSocraticSession] = useState<any>(null);
+  const [isLoadingAdvancedHint, setIsLoadingAdvancedHint] = useState(false);
+  const [advancedHintError, setAdvancedHintError] = useState<string | undefined>();
   
   // Initialize proctoring hook with enabled state
   const proctoring = useProctoring(proctoringEnabled);
@@ -477,26 +496,60 @@ function QuizContent() {
   const handleRevealHint = async (level: number = 1) => {
     if (!q) return;
     setShowHint(true);
-    
-    if (level === 1) {
-      setHintLevel(1);
+
+    // Use advanced 5-level Socratic hint system for the first hint
+    if (level === 1 && !socraticSession) {
+      const sessionId = `hint_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      setIsLoadingAdvancedHint(true);
+      setAdvancedHintError(undefined);
       setHintLoading(true);
       try {
-        const res = await getSocraticHint({
+        const response = await api.post('/socratic-advanced/hint-adaptive', {
           question: q.question,
           user_answer: selected !== null ? q.options[selected] : "I don't know",
           correct_answer: q.options[q.correct],
           confidence: 3,
-          hint_level: 1
+          theta: theta,
+          session_id: sessionId,
         });
-        setAiHint(res.hint || q.hint || "Try breaking down the question's terms.");
-      } catch (e) {
-        console.error("Failed to fetch Socratic hint 1:", e);
-        setAiHint(q.hint || "Think about the core concept.");
+        const hintData = response.data;
+        const newSession = {
+          session_id: sessionId,
+          question: q.question,
+          correct_answer: q.options[q.correct],
+          hints: [hintData],
+          misconception: hintData.misconception,
+        };
+        setSocraticSession(newSession);
+        // Also populate legacy aiHint for compatibility
+        setAiHint(hintData.hint || q.hint || "Try breaking down the question's terms.");
+        setHintLevel(1);
+      } catch (e: any) {
+        const errorMsg = e?.response?.data?.detail || e?.message || 'Failed to get hint';
+        setAdvancedHintError(errorMsg);
+        console.error("Failed to fetch advanced Socratic hint:", e);
+        // Fallback to legacy hint
+        try {
+          const res = await getSocraticHint({
+            question: q.question,
+            user_answer: selected !== null ? q.options[selected] : "I don't know",
+            correct_answer: q.options[q.correct],
+            confidence: 3,
+            hint_level: 1
+          });
+          setAiHint(res.hint || q.hint || "Try breaking down the question's terms.");
+        } catch {
+          setAiHint(q.hint || "Think about the core concept.");
+        }
       } finally {
         setHintLoading(false);
+        setIsLoadingAdvancedHint(false);
       }
-    } else {
+      return;
+    }
+
+    // Legacy level-2 hint (used only when advanced session is not available)
+    if (level === 2 && !socraticSession) {
       setHintLevel(2);
       setHint2Loading(true);
       try {
@@ -514,6 +567,48 @@ function QuizContent() {
       } finally {
         setHint2Loading(false);
       }
+    }
+  };
+
+  const handleEscalateHint = async () => {
+    if (!socraticSession?.session_id || !q) return;
+    setIsLoadingAdvancedHint(true);
+    setAdvancedHintError(undefined);
+    try {
+      const response = await api.post(`/socratic-advanced/hint-escalate?session_id=${socraticSession.session_id}`, {
+        question: socraticSession.question,
+        user_answer: selected !== null ? q.options[selected] : "I don't know",
+        correct_answer: socraticSession.correct_answer,
+        confidence: 3,
+        theta: theta,
+      });
+      const hintData = response.data;
+      setSocraticSession((prev: any) => ({
+        ...prev,
+        hints: [...prev.hints, hintData],
+        misconception: hintData.misconception || prev.misconception,
+      }));
+    } catch (e: any) {
+      const errorMsg = e?.response?.data?.detail || e?.message || 'Failed to escalate hint';
+      setAdvancedHintError(errorMsg);
+      console.error("Failed to escalate hint:", e);
+    } finally {
+      setIsLoadingAdvancedHint(false);
+    }
+  };
+
+  const handleTrackHintOutcome = async (helpful: boolean) => {
+    if (!socraticSession?.hints || socraticSession.hints.length === 0) return;
+    const lastHint = socraticSession.hints[socraticSession.hints.length - 1];
+    try {
+      await api.post('/socratic-advanced/hint-outcome', {
+        hint_id: lastHint.hint_id,
+        did_help: helpful,
+        time_to_understand: 5,
+        hint_level: lastHint.hint_level,
+      });
+    } catch (e) {
+      console.error('Error tracking hint outcome:', e);
     }
   };
 
@@ -624,6 +719,11 @@ function QuizContent() {
     setAiHint("");
     setAiHint2("");
     setHintLevel(1);
+    if (socraticSession?.session_id) {
+      api.delete(`/socratic-advanced/session/${socraticSession.session_id}`).catch(() => {});
+    }
+    setSocraticSession(null);
+    setAdvancedHintError(undefined);
     setShowExplanation(false);
     setAiDiagramUrl("");
     setAiDiagramSyntax(null);
@@ -631,10 +731,11 @@ function QuizContent() {
     setAiExample("");
     setAiCommonMistake("");
     setShowSidebarDiagram(false);
-    setQIndex((i) => i + 1);
-    if (qIndex + 1 >= TOTAL_QUESTIONS) {
+    const nextIndex = qIndex + 1;
+    if (isClassroomQuiz && targetQuestions && nextIndex >= targetQuestions) {
       finishQuiz();
     } else {
+      setQIndex(nextIndex);
       fetchNextQuestion(theta);
     }
   };
@@ -644,19 +745,8 @@ function QuizContent() {
     if (proctoringEnabled) {
       proctoring.stop();
     }
-    
-    const params = new URLSearchParams({
-      topic: inputTopic,
-      subtopic: selectedSubtopic || "General",
-      correct: String(score),
-      total: String(qIndex + 1),
-      startTheta: startTheta.toFixed(2),
-      endTheta: theta.toFixed(2),
-    });
-    if (misconceptionTags.length > 0) {
-      params.set("misconceptions", misconceptionTags.join(","));
-    }
-    router.push(`/quiz/results?${params.toString()}`);
+    // Show Gayatri's in-page results screen (concepts to focus on + targeted quiz)
+    setQuizState('results');
   };
 
   // Clean up camera on unmount or when quiz state changes
@@ -767,9 +857,28 @@ function QuizContent() {
     const accuracyPct = totalAnswered > 0 ? Math.round((totalCorrect / totalAnswered) * 100) : 0;
 
     const wrongRecords = questionHistory.filter(r => !r.correct);
-    const focusConcepts = Array.from(new Set(wrongRecords.map(r => r.concept)));
+
+    // Smart Deduplication for LLM-generated similar concepts (Gayatri: Added prerequisite quizes)
+    let focusConceptsList: {original: string, norm: string, subtopic: string}[] = [];
+    wrongRecords.forEach(r => {
+      if (!r.concept) return;
+      let norm = r.concept.replace(/\([^)]*\)/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (norm.endsWith('s') && !norm.endsWith('ss')) norm = norm.slice(0, -1);
+      if (!norm) return;
+
+      let dupIdx = focusConceptsList.findIndex(item => item.norm.includes(norm) || norm.includes(item.norm));
+      if (dupIdx !== -1) {
+        if (norm.length < focusConceptsList[dupIdx].norm.length) {
+          focusConceptsList[dupIdx] = { original: r.concept, norm, subtopic: r.subtopic };
+        }
+      } else {
+        focusConceptsList.push({ original: r.concept, norm, subtopic: r.subtopic });
+      }
+    });
+
+    const focusConcepts = focusConceptsList.map(item => item.original);
     const conceptSubtopicMap: Record<string, string> = {};
-    wrongRecords.forEach(r => { if (!conceptSubtopicMap[r.concept]) conceptSubtopicMap[r.concept] = r.subtopic; });
+    focusConceptsList.forEach(item => { conceptSubtopicMap[item.original] = item.subtopic; });
 
     const wrongBloomLevels = questionHistory
       .filter(r => !r.correct)
@@ -979,9 +1088,10 @@ function QuizContent() {
   if (isGenLoading || !q) return <LoadingState label="Generating next adaptive question..." />;
 
   const timerColor = timer > 20 ? "var(--success)" : timer > 10 ? "var(--warning)" : "var(--coral)";
-  const progress = Math.min(100, ((qIndex + 1) / TOTAL_QUESTIONS) * 100);
+  const progress = isClassroomQuiz && targetQuestions
+    ? Math.min(100, ((qIndex + 1) / targetQuestions) * 100)
+    : Math.min(100, ((qIndex + 1) / 10) * 100);
   const correct = feedback?.correct || selected === q.correct;
-  const canEndTest = qIndex >= 9;
 
   const currentDifficultyLabel = difficulty < -1.5 ? "easy" : difficulty < 0.5 ? "medium" : "hard";
 
@@ -991,7 +1101,12 @@ function QuizContent() {
       <div className="card" style={{ marginBottom: "var(--space-6)", display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "var(--space-4)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <span style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-black)" }}>Question {qIndex + 1}/{TOTAL_QUESTIONS}</span>
+            <span style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-black)" }}>
+              {isClassroomQuiz && targetQuestions 
+                ? `Question ${qIndex + 1}/${targetQuestions}` 
+                : `Question ${qIndex + 1}`
+              }
+            </span>
             <span style={{ color: "var(--muted)", fontSize: "var(--text-sm)" }}>({inputTopic})</span>
           </div>
           
@@ -1012,25 +1127,34 @@ function QuizContent() {
               </div>
             </div>
 
-            <button
-              onClick={handleEndTest}
-              disabled={!canEndTest}
-              title={canEndTest ? "End test and see results" : `Complete at least ${10 - (qIndex + 1) + (submitted ? 1 : 0)} more question(s) to end`}
-              style={{
-                background: canEndTest ? "#DC2626" : "var(--surface-high)",
-                color: canEndTest ? "white" : "var(--muted)",
-                border: "1px solid var(--outline)",
-                borderRadius: "var(--radius-md)",
-                padding: "var(--space-2) var(--space-3)",
-                fontSize: "var(--text-xs)",
-                fontWeight: "var(--font-extrabold)",
-                cursor: canEndTest ? "pointer" : "not-allowed",
-                whiteSpace: "nowrap",
-                transition: "all var(--transition-fast) ease",
-              }}
-            >
-              {canEndTest ? "🏁 End Test" : `End Test (${Math.max(0, 10 - (qIndex + 1))} left)`}
-            </button>
+            {!isClassroomQuiz ? (
+              <button
+                onClick={handleEndTest}
+                disabled={!canEndTest}
+                title={canEndTest ? "End test and see results" : `Complete at least ${10 - (qIndex + 1) + (submitted ? 1 : 0)} more question(s) to end`}
+                style={{
+                  background: canEndTest ? "#DC2626" : "var(--surface-high)",
+                  color: canEndTest ? "white" : "var(--muted)",
+                  border: "1px solid var(--outline)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "var(--space-2) var(--space-3)",
+                  fontSize: "var(--text-xs)",
+                  fontWeight: "var(--font-extrabold)",
+                  cursor: canEndTest ? "pointer" : "not-allowed",
+                  whiteSpace: "nowrap",
+                  transition: "all var(--transition-fast) ease",
+                }}
+              >
+                {canEndTest ? "🏁 End Test" : `End Test (${Math.max(0, 10 - (qIndex + 1))} left)`}
+              </button>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)", padding: "var(--space-1) var(--space-3)", background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.2)", borderRadius: "var(--radius-full)" }}>
+                <Shield size={14} color="#DC2626" />
+                <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--font-extrabold)", color: "#DC2626" }}>
+                  Classroom Assignment
+                </span>
+              </div>
+            )}
           </div>
         </div>
         <div className="progress-track" style={{ height: "8px" }}>
@@ -1287,18 +1411,21 @@ function QuizContent() {
                     flex: 2,
                     padding: "var(--space-2) var(--space-4)",
                     fontSize: "var(--text-xs)",
-                    background: "var(--primary)",
-                    color: "white",
-                    fontWeight: "var(--font-black)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "var(--space-2)",
-                    borderRadius: "var(--radius-md)"
-                  }}
-                >
-                  <span>🟣 Next Adaptive Question</span>
-                  <ChevronRight size={14} />
+                  background: (isClassroomQuiz && targetQuestions && qIndex + 1 >= targetQuestions) ? "#059669" : "var(--primary)",
+                  color: "white",
+                  fontWeight: "var(--font-black)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "var(--space-2)",
+                  borderRadius: "var(--radius-md)"
+                }}
+              >
+                {isClassroomQuiz && targetQuestions && qIndex + 1 >= targetQuestions ? (
+                  <><Trophy size={14} /><span>See Results</span></>
+                ) : (
+                  <><span>🟣 Next Adaptive Question</span><ChevronRight size={14} /></>
+                )}
                 </button>
               </div>
             </div>
@@ -1416,10 +1543,22 @@ function QuizContent() {
                     <Lightbulb size={18} color="var(--warning)" />
                     <h4 style={{ margin: 0, fontWeight: "var(--font-bold)" }}>Need Help?</h4>
                   </div>
-                  
-                  {hintLoading ? (
-                    <DancingSquares size="sm" inline label="AI is generating Hint 1..." />
+
+                  {(hintLoading || isLoadingAdvancedHint) && !socraticSession ? (
+                    <DancingSquares size="sm" inline label="AI is generating hint..." />
+                  ) : socraticSession?.hints && socraticSession.hints.length > 0 ? (
+                    /* 5-level Socratic Hint Panel */
+                    <SocraticHintPanel
+                      hints={socraticSession.hints}
+                      misconception={socraticSession.misconception}
+                      canEscalate={socraticSession.hints.length < 5 && socraticSession.hints[socraticSession.hints.length - 1]?.next_level_available}
+                      isLoading={isLoadingAdvancedHint}
+                      error={advancedHintError}
+                      onEscalateHint={handleEscalateHint}
+                      onTrackOutcome={handleTrackHintOutcome}
+                    />
                   ) : aiHint ? (
+                    /* Fallback: simple hint display */
                     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
                       <div style={{ padding: "var(--space-3)", background: "var(--warning-soft)", border: "1px solid var(--warning)", borderRadius: "var(--radius-lg)" }}>
                         <div style={{ fontSize: "var(--text-xs)", fontWeight: "var(--font-bold)", color: "var(--warning)", marginBottom: "4px" }}>HINT 1</div>

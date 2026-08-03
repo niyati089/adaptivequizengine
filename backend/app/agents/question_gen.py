@@ -139,5 +139,12 @@ Respond ONLY with valid JSON (no markdown, no backticks):
     if not _validate_variant(variant):
         return {**base_question, "is_variant": False}
 
+    variant["is_variant"] = True
+    # Preserve concept and hint from the original question (Gayatri: Added prerequisite quizes)
+    if "concept" in base_question:
+        variant["concept"] = base_question["concept"]
+    if "hint" in base_question:
+        variant["hint"] = base_question["hint"]
+
     # Shuffle the option letters so even the correct-answer letter differs
     return _shuffle_options(variant)
