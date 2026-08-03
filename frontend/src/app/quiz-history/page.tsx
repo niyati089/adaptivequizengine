@@ -78,14 +78,15 @@ export default function QuizHistoryPage() {
     });
   };
 
-  const formatNextReview = (iso: string | null): string => {
-    if (!iso) return "";
+  const formatNextReview = (iso: string | null): { relative: string; exact: string; overdue: boolean } | null => {
+    if (!iso) return null;
     const date = new Date(iso);
     const now = new Date();
     const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) return "Review due now";
-    if (diffDays === 1) return "Review tomorrow";
-    return `Review in ${diffDays}d`;
+    const exact = date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    if (diffDays <= 0) return { relative: "Due now", exact, overdue: true };
+    if (diffDays === 1) return { relative: "Tomorrow", exact, overdue: false };
+    return { relative: `In ${diffDays} days`, exact, overdue: false };
   };
 
   const getBloomColor = (level: string | null) => {
@@ -229,28 +230,35 @@ export default function QuizHistoryPage() {
                     </div>
 
                     {/* Next Review Badge */}
-                    {group.next_review_date && (
-                      <div style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "var(--space-1)",
-                        background: new Date(group.next_review_date) <= new Date()
-                          ? "var(--error-soft)"
-                          : "var(--primary-soft)",
-                        color: new Date(group.next_review_date) <= new Date()
-                          ? "var(--error)"
-                          : "var(--primary)",
-                        border: `1px solid ${new Date(group.next_review_date) <= new Date() ? "var(--error)" : "var(--primary)"}`,
-                        borderRadius: "var(--radius-full)",
-                        padding: "var(--space-1) var(--space-3)",
-                        fontSize: "var(--text-xs)",
-                        fontWeight: "var(--font-bold)",
-                        whiteSpace: "nowrap",
-                      }}>
-                        <Clock size={11} style={{ flexShrink: 0 }} />
-                        {formatNextReview(group.next_review_date)}
-                      </div>
-                    )}
+                    {group.next_review_date && (() => {
+                      const review = formatNextReview(group.next_review_date);
+                      if (!review) return null;
+                      return (
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: "1px",
+                          background: review.overdue ? "var(--error-soft)" : "var(--primary-soft)",
+                          color: review.overdue ? "var(--error)" : "var(--primary)",
+                          border: `1px solid ${review.overdue ? "var(--error)" : "var(--primary)"}`,
+                          borderRadius: "var(--radius-lg)",
+                          padding: "var(--space-1) var(--space-3)",
+                          minWidth: "80px",
+                          textAlign: "center",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+                            <Clock size={10} style={{ flexShrink: 0 }} />
+                            <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--font-extrabold)", whiteSpace: "nowrap" }}>
+                              {review.exact}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: "10px", fontWeight: "var(--font-semibold)", opacity: 0.75, whiteSpace: "nowrap" }}>
+                            {review.relative}
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     <ChevronRight
                       size="var(--icon-lg)"
