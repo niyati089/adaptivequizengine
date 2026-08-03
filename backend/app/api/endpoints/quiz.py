@@ -224,6 +224,57 @@ async def submit_answer(
     db.add(attempt)
     db.commit()
 
+    # ── Auto-persist ReviewSchedule (Adaptive SM-2) ──────────────────────
+    # Upsert a ReviewSchedule row every time a question is answered so the
+    # /history endpoint always has a real next_review_date to display.
+    try:
+        from app.repetition.adaptive_sm2_scheduler import AdaptiveSM2Scheduler
+        from app.models.review import ReviewSchedule
+        from datetime import datetime as _dt
+
+        _sched = db.query(ReviewSchedule).filter(
+            ReviewSchedule.user_id == user_id,
+            ReviewSchedule.topic_id == req.topic,
+        ).first()
+
+        # Map correctness + IRT confidence to SM-2 quality rating (0-5)
+        # correct + high theta gain → 5, wrong + low theta → 0
+        theta_delta = new_theta - req.theta
+        if correct:
+            rating = 5 if theta_delta >= 0.2 else 4 if theta_delta >= 0.1 else 3
+        else:
+            rating = 1 if theta_delta <= -0.2 else 2
+
+        _scheduler = AdaptiveSM2Scheduler()
+        new_params = _scheduler.calculate_next_review_adaptive(
+            rating=rating,
+            ease_factor=_sched.ease_factor if _sched else 2.5,
+            interval_days=_sched.interval_days if _sched else 0,
+            repetition_count=_sched.repetition_count if _sched else 0,
+            theta=new_theta,
+            difficulty=req.difficulty or 0.0,
+            target_retention=0.85,
+        )
+
+        if _sched is None:
+            _sched = ReviewSchedule(
+                user_id=user_id,
+                topic_id=req.topic,
+                mastery_score=0.0,
+            )
+            db.add(_sched)
+
+        _sched.ease_factor      = new_params["ease_factor"]
+        _sched.interval_days    = new_params["interval_days"]
+        _sched.repetition_count = new_params["repetition_count"]
+        _sched.next_review_date = new_params["next_review_date"]
+        db.commit()
+    except Exception as _e:
+        # Never let SM-2 persistence break the quiz flow
+        db.rollback()
+        print(f"[SM-2 auto-persist] warning: {_e}")
+    # ─────────────────────────────────────────────────────────────────────
+
     return {
         "correct": correct,
         "new_theta": new_theta,
@@ -310,51 +361,12 @@ async def get_quiz_history(
         for rs in review_schedules
     }
 
-    # Import here to avoid circular imports
-    from app.repetition.adaptive_sm2_scheduler import AdaptiveSM2Scheduler
-    from datetime import datetime
-    _scheduler = AdaptiveSM2Scheduler()
-
     # Calculate accuracy for each group and attach next_review_date
     result = []
     for key, data in grouped_data.items():
         accuracy = (data["correct_attempts"] / data["total_attempts"] * 100) if data["total_attempts"] > 0 else 0
-
-        # 1. Use persisted ReviewSchedule date if it exists
+        # ReviewSchedule is now auto-persisted on every submit — just read from map
         next_review_date = review_map.get(data["topic"])
-
-        # 2. Otherwise auto-calculate using Adaptive SM-2 from attempt signals
-        if not next_review_date and data["attempts"]:
-            # Map accuracy (0-100) → SM-2 quality rating (0-5)
-            rating = min(5, int(accuracy / 20))
-
-            # Pull IRT signals from the most recent attempt
-            latest = data["attempts"][0]  # already sorted desc by timestamp
-            theta     = float(latest.get("theta_after") or 0.0)
-            difficulty = float(latest.get("difficulty") or 0.0)
-
-            # Use last attempt timestamp as the baseline "last reviewed" date
-            last_ts = latest.get("timestamp")
-            try:
-                last_dt = datetime.fromisoformat(last_ts) if last_ts else datetime.utcnow()
-            except Exception:
-                last_dt = datetime.utcnow()
-
-            # Seed SM-2 with first-time defaults
-            params = _scheduler.calculate_next_review_adaptive(
-                rating=rating,
-                ease_factor=2.5,
-                interval_days=0,
-                repetition_count=0,
-                theta=theta,
-                difficulty=difficulty,
-                target_retention=0.85,
-            )
-            # Anchor review date relative to last attempt, not now
-            from datetime import timedelta
-            anchored = last_dt + timedelta(days=params["interval_days"])
-            next_review_date = anchored.isoformat()
-
         result.append({
             "topic": data["topic"],
             "subtopic": data["subtopic"],
