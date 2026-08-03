@@ -30,6 +30,7 @@ interface GroupedHistory {
   total_attempts: number;
   correct_attempts: number;
   accuracy: number;
+  next_review_date: string | null;
   attempts: Attempt[];
 }
 
@@ -75,6 +76,16 @@ export default function QuizHistoryPage() {
       hour: "2-digit",
       minute: "2-digit"
     });
+  };
+
+  const formatNextReview = (iso: string | null): string => {
+    if (!iso) return "";
+    const date = new Date(iso);
+    const now = new Date();
+    const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return "Review due now";
+    if (diffDays === 1) return "Review tomorrow";
+    return `Review in ${diffDays}d`;
   };
 
   const getBloomColor = (level: string | null) => {
@@ -216,6 +227,31 @@ export default function QuizHistoryPage() {
                         {group.correct_attempts}/{group.total_attempts} correct
                       </div>
                     </div>
+
+                    {/* Next Review Badge */}
+                    {group.next_review_date && (
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "var(--space-1)",
+                        background: new Date(group.next_review_date) <= new Date()
+                          ? "var(--error-soft)"
+                          : "var(--primary-soft)",
+                        color: new Date(group.next_review_date) <= new Date()
+                          ? "var(--error)"
+                          : "var(--primary)",
+                        border: `1px solid ${new Date(group.next_review_date) <= new Date() ? "var(--error)" : "var(--primary)"}`,
+                        borderRadius: "var(--radius-full)",
+                        padding: "var(--space-1) var(--space-3)",
+                        fontSize: "var(--text-xs)",
+                        fontWeight: "var(--font-bold)",
+                        whiteSpace: "nowrap",
+                      }}>
+                        <Clock size={11} style={{ flexShrink: 0 }} />
+                        {formatNextReview(group.next_review_date)}
+                      </div>
+                    )}
+
                     <ChevronRight
                       size="var(--icon-lg)"
                       color="var(--muted)"

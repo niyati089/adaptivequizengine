@@ -11,6 +11,7 @@ from app.irt.theta_estimator import ThetaEstimator
 from app.models.user import User
 from app.models.attempt import QuestionAttempt
 from app.models.classroom import ClassroomQuiz
+from app.models.review import ReviewSchedule
 from app.misconceptions.analyzer import MisconceptionAnalyzer
 from app.agents.question_gen import generate_variant
 from app.api.endpoints.users import get_current_student, oauth2_scheme, resolve_user_id_from_token
@@ -298,16 +299,30 @@ async def get_quiz_history(
             "timestamp": attempt.timestamp.isoformat() if attempt.timestamp else None
         })
     
-    # Calculate accuracy for each group
+    # Fetch all review schedules for this user in one query (topic -> next_review_date)
+    review_schedules = (
+        db.query(ReviewSchedule)
+        .filter(ReviewSchedule.user_id == user_id)
+        .all()
+    )
+    review_map = {
+        rs.topic_id: rs.next_review_date.isoformat() if rs.next_review_date else None
+        for rs in review_schedules
+    }
+
+    # Calculate accuracy for each group and attach next_review_date
     result = []
     for key, data in grouped_data.items():
         accuracy = (data["correct_attempts"] / data["total_attempts"] * 100) if data["total_attempts"] > 0 else 0
+        # Match review schedule by topic name (topic_id == topic string)
+        next_review_date = review_map.get(data["topic"])
         result.append({
             "topic": data["topic"],
             "subtopic": data["subtopic"],
             "total_attempts": data["total_attempts"],
             "correct_attempts": data["correct_attempts"],
             "accuracy": round(accuracy, 1),
+            "next_review_date": next_review_date,
             "attempts": data["attempts"]
         })
     
