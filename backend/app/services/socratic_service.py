@@ -11,6 +11,7 @@ class SocraticService:
         hint = await self.agent.generate_hint(
             question=request.question,
             user_answer=request.user_answer,
-            correct_answer=request.correct_answer
+            correct_answer=request.correct_answer,
+            hint_level=request.hint_level
         )
         return SocraticResponse(mode="socratic", hint=hint)

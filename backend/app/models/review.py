@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, Float, DateTime, String
-from datetime import datetime
+from app.core.time_utils import utcnow
 from app.models.base import Base
 
 class ReviewSchedule(Base):
@@ -12,6 +12,6 @@ class ReviewSchedule(Base):
     ease_factor = Column(Float, default=2.5)
     interval_days = Column(Integer, default=0)
     repetition_count = Column(Integer, default=0)
-    next_review_date = Column(DateTime, default=datetime.utcnow)
+    next_review_date = Column(DateTime, default=utcnow)
 
     # TODO: Add foreign key constraints to User and Topic tables when appropriate

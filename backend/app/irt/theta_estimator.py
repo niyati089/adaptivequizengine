@@ -24,7 +24,7 @@ class ThetaEstimator:
             theta += learning_rate * (1 - p)
         else:
             theta -= learning_rate * p
-        return round(max(-3.0, min(3.0, theta)), 4)   
+        return round(max(-3.0, min(3.0, theta)), 4)
 
     @staticmethod
     def select_next_difficulty(theta: float) -> float:

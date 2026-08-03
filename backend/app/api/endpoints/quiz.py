@@ -1,31 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from groq import Groq
-import os
 import json
-import certifi
 from sqlalchemy.orm import Session
-from sqlalchemy import text, inspect
+from sqlalchemy import func, desc
+from app.core.config import resolve_groq_api_key
 from app.database.session import get_db
-from app.database.connection import engine
 from app.irt.theta_estimator import ThetaEstimator
 from app.models.user import User
-from app.api.endpoints.users import get_current_student, oauth2_scheme
-from app.models.proctoring_event import ProctoringEvent
 from app.models.attempt import QuestionAttempt
-
-# Set SSL certificate path for Windows
-if not os.environ.get('SSL_CERT_FILE'):
-    os.environ['SSL_CERT_FILE'] = certifi.where()
-    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()
+from app.models.classroom import ClassroomQuiz
+from app.misconceptions.analyzer import MisconceptionAnalyzer
+from app.agents.question_gen import generate_variant
+from app.api.endpoints.users import get_current_student, oauth2_scheme, resolve_user_id_from_token
 
 router = APIRouter()
-
-# Must stay in sync with proctoring.py constant
-_LOCKABLE_TYPES = {"TAB_SWITCH", "FULLSCREEN_EXIT", "COPY_ATTEMPT", "PASTE_ATTEMPT"}
-_MAX_VIOLATIONS = 2
-
 
 class QuestionRequest(BaseModel):
     topic: str
@@ -33,12 +23,13 @@ class QuestionRequest(BaseModel):
     difficulty: float
     bloom_level: str
     previous_questions: list[str] = []
+    classroom_quiz_id: Optional[int] = None
     api_key: Optional[str] = None
-    enable_anti_cheating: Optional[bool] = True
-    session_id: Optional[str] = None  # Required for lock enforcement when authenticated
-
 
 class AnswerRequest(BaseModel):
+    user_id: Optional[int] = None
+    classroom_id: Optional[int] = None
+    classroom_quiz_id: Optional[int] = None
     theta: float
     difficulty: float
     selected_option: str
@@ -47,56 +38,20 @@ class AnswerRequest(BaseModel):
     subtopic: str
     question: str
     misconception: Optional[str] = None
+    misconceptions: Optional[dict[str, str]] = None
     question_index: int = 1
     api_key: Optional[str] = None
-    # New fields for complete question data
-    question_options: Optional[dict] = None  # {A: "...", B: "...", C: "...", D: "..."}
+    answer_options: Optional[dict[str, str]] = None
     explanation: Optional[str] = None
     bloom_level: Optional[str] = None
 
-
-def _check_session_locked(session_id: str, db: Session) -> bool:
-    """
-    Returns True if this session has reached the violation threshold.
-    Checked server-side so client-side state manipulation cannot bypass it.
-    """
-    try:
-        count = db.query(ProctoringEvent).filter(
-            ProctoringEvent.session_id == session_id,
-            ProctoringEvent.event_type.in_(list(_LOCKABLE_TYPES))
-        ).count()
-        return count >= _MAX_VIOLATIONS
-    except Exception:
-        # If DB is unavailable, fail open (allow question) — proctoring fallback handles logging
-        return False
-
-
 @router.post("/generate")
-async def generate_question(
-    req: QuestionRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_student)
-):
-    # ── Fix 2: Server-side session lock check ──────────────────────────────────
-    # Even if the client manipulates React state to set isLocked=false, the
-    # backend will refuse to serve new questions if the DB shows ≥2 violations.
-    if req.session_id:
-        if _check_session_locked(req.session_id, db):
-            raise HTTPException(
-                status_code=403,
-                detail="Session locked: integrity violations exceeded. No further questions will be served."
-            )
-
-    api_key = req.api_key or os.getenv("GROQ_API_KEY")
+async def generate_question(req: QuestionRequest, db: Session = Depends(get_db)):
+    api_key = resolve_groq_api_key(req.api_key)
     if not api_key:
         raise HTTPException(status_code=400, detail="API key required")
 
-    import httpx
-    # Disable SSL verification for development (Windows certificate issues)
-    client = Groq(
-        api_key=api_key,
-        http_client=httpx.Client(verify=False)
-    )
+    client = Groq(api_key=api_key)
     difficulty_label = ThetaEstimator.theta_to_label(req.difficulty)
     avoid = "\n".join(f"- {q}" for q in req.previous_questions[-5:]) if req.previous_questions else "None"
 
@@ -162,22 +117,18 @@ Calibration guide:
     if "hint" not in data:
         data["hint"] = "Think critically about the options presented."
 
-    if req.enable_anti_cheating:
-        from app.agents.question_gen import QuestionGenerationAgent
-        from groq import AsyncGroq
-        agent = QuestionGenerationAgent()
-        if api_key:
-            agent.client = AsyncGroq(
-                api_key=api_key,
-                http_client=httpx.AsyncClient(verify=False)
-            )
-        variant_data = await agent.generate_variant(data)
-        return variant_data
+    # ── Anti-cheat variant generation (classroom quizzes only) ──────────
+    # Only fires when the teacher has explicitly enabled anti-cheating on
+    # this specific classroom quiz.  Free-practice requests never pay the
+    # extra LLM call.
+    if req.classroom_quiz_id:
+        quiz = db.query(ClassroomQuiz).filter(
+            ClassroomQuiz.id == req.classroom_quiz_id
+        ).first()
+        if quiz and quiz.enable_anti_cheating:
+            data = generate_variant(data, api_key)
 
-    # For base questions, set is_variant to False
-    data["is_variant"] = False
     return data
-
 
 
 @router.post("/submit")
@@ -200,20 +151,8 @@ async def submit_answer(
     else:
         next_bloom_idx = current_bloom_idx
 
-    # Resolve user_id dynamically
-    user_id = None
-    if token:
-        try:
-            from jose import jwt
-            from app.core.config import settings
-            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-            email = payload.get("sub")
-            if email:
-                user = db.query(User).filter(User.email == email).first()
-                if user:
-                    user_id = user.id
-        except Exception:
-            pass
+    # Resolve user_id dynamically, while accepting explicit user_id for local clients/tests.
+    user_id = resolve_user_id_from_token(db, token, req.user_id)
 
     if not user_id:
         # Fallback/Autoseed student user for testing & local run compatibility
@@ -231,202 +170,158 @@ async def submit_answer(
             db.refresh(first_student)
         user_id = first_student.id
 
-    # Log the incoming data for debugging
-    print("=" * 70)
-    print("📝 QUIZ SUBMISSION RECEIVED")
-    print("=" * 70)
-    print(f"User ID: {user_id}")
-    print(f"Topic: {req.topic}")
-    print(f"Subtopic: {req.subtopic}")
-    print(f"Question: {req.question[:80]}...")
-    print(f"Selected: {req.selected_option} | Correct: {req.correct_answer}")
-    print(f"Theta: {req.theta} → {new_theta}")
-    print("\n📦 QUIZ HISTORY FIELDS:")
-    print(f"  • question_options: {type(req.question_options)} - {req.question_options is not None}")
-    if req.question_options:
-        print(f"    Keys: {list(req.question_options.keys())}")
-    print(f"  • explanation: {type(req.explanation)} - {req.explanation is not None}")
-    if req.explanation:
-        print(f"    Length: {len(req.explanation)} chars")
-    print(f"  • bloom_level: {type(req.bloom_level)} - {req.bloom_level}")
-    print("=" * 70)
+    raw_misconception = None
+    misconception_tag = None
+    if not correct:
+        raw_misconception = (
+            req.misconceptions.get(req.selected_option)
+            if req.misconceptions
+            else req.misconception
+        )
+
+        if raw_misconception:
+            groq_client = None
+            api_key = resolve_groq_api_key(req.api_key)
+            if api_key:
+                try:
+                    groq_client = Groq(api_key=api_key)
+                except Exception:
+                    groq_client = None
+
+            analyzer = MisconceptionAnalyzer(db=db, groq_client=groq_client)
+            misconception_tag = analyzer.classify(raw_misconception, req.topic, req.subtopic)
+            analyzer.record(
+                user_id=user_id,
+                topic=req.topic,
+                subtopic=req.subtopic,
+                tag=misconception_tag,
+                raw_text=raw_misconception,
+                question_snippet=req.question,
+                selected_option=req.selected_option,
+            )
 
     # Record the attempt in the database
+    import json
     attempt = QuestionAttempt(
         user_id=user_id,
+        classroom_id=req.classroom_id,
+        classroom_quiz_id=req.classroom_quiz_id,
         topic=req.topic,
         subtopic=req.subtopic,
         question_text=req.question,
         selected_option=req.selected_option,
         correct_option=req.correct_answer,
         is_correct=correct,
-        misconception=req.misconception if not correct else None,
+        misconception=raw_misconception if not correct else None,
         theta_before=req.theta,
         theta_after=new_theta,
-        question_options=req.question_options,  # Store options for history display
-        explanation=req.explanation,  # Store explanation for review
-        bloom_level=req.bloom_level  # Store Bloom's level for analysis
+        answer_options=json.dumps(req.answer_options) if req.answer_options else None,
+        explanation=req.explanation,
+        bloom_level=req.bloom_level,
+        difficulty=req.difficulty
     )
     db.add(attempt)
     db.commit()
-    
-    print(f"✓ Saved attempt #{attempt.id} to database")
 
     return {
         "correct": correct,
         "new_theta": new_theta,
+        "next_theta": new_theta,
         "theta_label": ThetaEstimator.theta_to_label(new_theta),
         "next_difficulty": next_difficulty,
         "next_bloom": bloom_order[next_bloom_idx],
         "probability_correct": round(ThetaEstimator.irt_probability(req.theta, req.difficulty), 3),
+        "misconception_tag": misconception_tag,
+        "misconception": raw_misconception,
     }
 
 
 @router.get("/history")
 async def get_quiz_history(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_student)
+    token: Optional[str] = Depends(oauth2_scheme)
 ):
-    """
-    Retrieves complete quiz history for the current user, organized by topic and subtopic.
-    """
-    print("\n" + "=" * 70)
-    print("📊 QUIZ HISTORY REQUEST")
-    print("=" * 70)
-    print(f"User ID: {current_user.id}")
-    print(f"User: {current_user.name} ({current_user.email})")
+    """Get quiz attempt history grouped by topic and subtopic with accuracy statistics."""
+    user_id = resolve_user_id_from_token(db, token, None)
     
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User not authenticated")
+    
+    # Get all attempts for the user
     attempts = db.query(QuestionAttempt).filter(
-        QuestionAttempt.user_id == current_user.id
-    ).order_by(QuestionAttempt.timestamp.desc()).all()
+        QuestionAttempt.user_id == user_id
+    ).order_by(desc(QuestionAttempt.timestamp)).all()
     
-    print(f"Found {len(attempts)} attempts")
-    
-    if not attempts:
-        print("⚠ No quiz attempts found for this user")
-        return {
-            "user_id": current_user.id,
-            "user_name": current_user.name,
-            "total_attempts": 0,
-            "history": {}
-        }
-    
-    # Organize by topic -> subtopic
-    history_dict = {}
+    # Group by topic and subtopic
+    grouped_data = {}
     
     for attempt in attempts:
-        if attempt.topic not in history_dict:
-            history_dict[attempt.topic] = {
-                "subtopics": {},
-                "stats": {
-                    "total_questions": 0,
-                    "correct": 0,
-                    "accuracy": 0.0
-                }
+        topic = attempt.topic or "Unknown"
+        subtopic = attempt.subtopic or "General"
+        
+        key = f"{topic}|{subtopic}"
+        
+        if key not in grouped_data:
+            grouped_data[key] = {
+                "topic": topic,
+                "subtopic": subtopic,
+                "total_attempts": 0,
+                "correct_attempts": 0,
+                "attempts": []
             }
         
-        if attempt.subtopic not in history_dict[attempt.topic]["subtopics"]:
-            history_dict[attempt.topic]["subtopics"][attempt.subtopic] = {
-                "questions": [],
-                "stats": {
-                    "total": 0,
-                    "correct": 0,
-                    "accuracy": 0.0
-                }
-            }
+        grouped_data[key]["total_attempts"] += 1
+        if attempt.is_correct:
+            grouped_data[key]["correct_attempts"] += 1
         
-        # Add attempt details
-        question_data = {
+        # Parse answer options if stored as JSON
+        answer_options = None
+        if attempt.answer_options:
+            try:
+                answer_options = json.loads(attempt.answer_options)
+            except:
+                pass
+        
+        grouped_data[key]["attempts"].append({
             "id": attempt.id,
             "question_text": attempt.question_text,
-            "options": attempt.question_options or {},
             "selected_option": attempt.selected_option,
             "correct_option": attempt.correct_option,
             "is_correct": attempt.is_correct,
+            "answer_options": answer_options,
             "explanation": attempt.explanation,
-            "misconception": attempt.misconception,
+            "bloom_level": attempt.bloom_level,
+            "difficulty": attempt.difficulty,
             "theta_before": attempt.theta_before,
             "theta_after": attempt.theta_after,
-            "bloom_level": attempt.bloom_level,
+            "misconception": attempt.misconception,
             "timestamp": attempt.timestamp.isoformat() if attempt.timestamp else None
-        }
-        
-        history_dict[attempt.topic]["subtopics"][attempt.subtopic]["questions"].append(question_data)
+        })
     
-    # Calculate statistics for each subtopic and topic
-    for topic, topic_data in history_dict.items():
-        total_q = 0
-        correct_q = 0
-        
-        for subtopic, subtopic_data in topic_data["subtopics"].items():
-            total = len(subtopic_data["questions"])
-            correct = sum(1 for q in subtopic_data["questions"] if q["is_correct"])
-            
-            subtopic_data["stats"]["total"] = total
-            subtopic_data["stats"]["correct"] = correct
-            subtopic_data["stats"]["accuracy"] = (correct / total * 100) if total > 0 else 0.0
-            
-            total_q += total
-            correct_q += correct
-        
-        topic_data["stats"]["total_questions"] = total_q
-        topic_data["stats"]["correct"] = correct_q
-        topic_data["stats"]["accuracy"] = (correct_q / total_q * 100) if total_q > 0 else 0.0
+    # Calculate accuracy for each group
+    result = []
+    for key, data in grouped_data.items():
+        accuracy = (data["correct_attempts"] / data["total_attempts"] * 100) if data["total_attempts"] > 0 else 0
+        result.append({
+            "topic": data["topic"],
+            "subtopic": data["subtopic"],
+            "total_attempts": data["total_attempts"],
+            "correct_attempts": data["correct_attempts"],
+            "accuracy": round(accuracy, 1),
+            "attempts": data["attempts"]
+        })
     
-    # Log summary
-    print("\n📈 HISTORY SUMMARY:")
-    print(f"  Topics: {len(history_dict)}")
-    for topic, data in history_dict.items():
-        print(f"    • {topic}: {data['stats']['total_questions']} questions, {data['stats']['accuracy']:.1f}% accuracy")
+    # Sort by most recent attempt
+    result.sort(key=lambda x: max(
+        (a["timestamp"] for a in x["attempts"] if a["timestamp"]), 
+        default=""
+    ), reverse=True)
     
-    response = {
-        "user_id": current_user.id,
-        "user_name": current_user.name,
+    return {
+        "grouped_history": result,
         "total_attempts": len(attempts),
-        "history": history_dict
+        "overall_accuracy": round(
+            (sum(1 for a in attempts if a.is_correct) / len(attempts) * 100) if attempts else 0, 
+            1
+        )
     }
-    
-    print("✓ Returning quiz history")
-    print("=" * 70 + "\n")
-    
-    return response
-
-
-@router.post("/init-schema")
-async def initialize_schema(db: Session = Depends(get_db)):
-    """
-    Initialize database schema for quiz history if needed.
-    Adds missing columns to question_attempts table.
-    """
-    try:
-        inspector = inspect(engine)
-        columns = inspector.get_columns('question_attempts')
-        existing_columns = {col['name'] for col in columns}
-        
-        result = {
-            "status": "ok",
-            "existing_columns": list(existing_columns),
-            "added_columns": []
-        }
-        
-        # Check and add missing columns
-        migrations = [
-            ('question_options', 'ALTER TABLE question_attempts ADD COLUMN question_options JSONB'),
-            ('explanation', 'ALTER TABLE question_attempts ADD COLUMN explanation TEXT'),
-            ('bloom_level', 'ALTER TABLE question_attempts ADD COLUMN bloom_level VARCHAR(50)')
-        ]
-        
-        with engine.begin() as connection:
-            for col_name, sql in migrations:
-                if col_name not in existing_columns:
-                    try:
-                        connection.execute(text(sql))
-                        result["added_columns"].append(col_name)
-                    except Exception as e:
-                        if 'already exists' not in str(e).lower():
-                            result["warning"] = f"Error adding {col_name}: {str(e)}"
-        
-        return result
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Schema initialization failed: {str(e)}")

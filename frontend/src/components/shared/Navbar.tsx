@@ -1,186 +1,406 @@
 "use client";
 
-import React, { useState } from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { BookOpen, Menu, X, LogOut } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import React, { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { LogOut, Menu, X, Sparkles } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 const navLinks = [
-  { href: '/', label: 'Home' },
-  { href: '/quiz', label: 'Quiz' },
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/educator', label: 'Educator' },
-  { href: '/analytics', label: 'Analytics' },
+  { href: "/", label: "Home" },
+  { href: "/quiz", label: "Quiz", roles: ["student"] },
+  { href: "/#challenges", label: "Challenges", roles: ["student"] },
+  { href: "/classes", label: "Classes" },
+  { href: "/dashboard", label: "Dashboard", roles: ["student"] },
+  { href: "/educator", label: "Educator", roles: ["teacher"] },
+  { href: "/analytics", label: "Analytics" },
 ];
+
+const isActive = (pathname: string, href: string) => {
+  if (href === "/") return pathname === "/";
+  const base = href.split("#")[0];
+  return base !== "/" && pathname.startsWith(base);
+};
 
 export const Navbar: React.FC = () => {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [hidden, setHidden] = useState(false);
   const { user, logout } = useAuth();
 
+  // Refs so the scroll handler never has to re-subscribe or re-render
+  // just to read the latest values (this was the source of the jitter/glitch).
+  const lastScrollY = useRef(0);
+  const tickingRef = useRef(false);
+
+  useEffect(() => {
+    lastScrollY.current = window.scrollY;
+
+    const HIDE_THRESHOLD = 80; // don't start hiding until we're past the top area
+    const DELTA = 8; // ignore tiny sub-pixel scroll jitter
+
+    const update = () => {
+      const currentY = window.scrollY;
+      const diff = currentY - lastScrollY.current;
+
+      // Always show the island near the top of the page.
+      if (currentY < HIDE_THRESHOLD) {
+        setHidden(false);
+      } else if (Math.abs(diff) > DELTA) {
+        // Scrolling down -> hide, scrolling up -> reveal.
+        setHidden(diff > 0);
+      }
+
+      lastScrollY.current = currentY;
+      tickingRef.current = false;
+    };
+
+    const handleScroll = () => {
+      // Batch scroll reads/writes into a single animation frame so we
+      // aren't calling setState on every fired scroll event.
+      if (!tickingRef.current) {
+        tickingRef.current = true;
+        window.requestAnimationFrame(update);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    update();
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Always show the menu (and never hide the bar) while the mobile
+  // dropdown is open, so it can't disappear out from under an open menu.
+  useEffect(() => {
+    if (mobileOpen) setHidden(false);
+  }, [mobileOpen]);
+
+  const initials = user?.name
+    ?.split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "AT";
+  const visibleLinks = navLinks.filter((link) => !link.roles || (user && link.roles.includes(user.role)));
+
   return (
-    <header style={{
-      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-      background: 'rgba(255,255,255,0.95)',
-      backdropFilter: 'blur(12px)',
-      WebkitBackdropFilter: 'blur(12px)',
-      borderBottom: '1px solid #E5E7EB',
-      height: '4rem',
-    }}>
-      <div style={{ maxWidth: '72rem', margin: '0 auto', padding: '0 1.5rem', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {/* Logo */}
-        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none' }}>
-          <div style={{ width: '2rem', height: '2rem', background: '#7C3AED', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <BookOpen size={16} color="white" />
-          </div>
-          <span style={{ fontSize: '1.0625rem', fontWeight: 800, color: '#111827', letterSpacing: '-0.02em' }}>
-            Adaptive<span style={{ color: '#7C3AED' }}>Tutor</span>
+    <header
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: "var(--z-fixed)",
+        display: "flex",
+        justifyContent: "center",
+        padding: "var(--space-4)",
+        pointerEvents: hidden ? "none" : "auto",
+        transform: hidden ? "translateY(-130%)" : "translateY(0)",
+        opacity: hidden ? 0 : 1,
+        transition: "transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease",
+      }}
+    >
+      <div
+        style={{
+          width: "min(calc(100% - var(--space-8)), 72rem)",
+          padding: "var(--space-3) var(--space-5)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "var(--space-6)",
+          borderRadius: "var(--radius-full)",
+          background: "rgba(18, 24, 38, 0.92)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          border: "1px solid rgba(255, 255, 255, 0.12)",
+          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.2)",
+        }}
+      >
+        <Link
+          href="/"
+          aria-label="AdaptiveTutor home"
+          style={{
+            textDecoration: "none",
+            display: "flex",
+            alignItems: "center",
+            gap: "2px"
+          }}
+        >
+          <span style={{
+            fontSize: "1.5rem",
+            fontWeight: "900",
+            background: "linear-gradient(to right, #6366f1, #a855f7, #ec4899)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text",
+            letterSpacing: "-0.05em",
+          }}>
+            Adaptive
           </span>
+          <span style={{
+            fontSize: "1.5rem",
+            fontWeight: "700",
+            color: "#f8fafc",
+            letterSpacing: "-0.02em",
+          }}>
+            Tutor
+          </span>
+          <span style={{ color: '#ec4899', fontSize: '1.5rem', fontWeight: '900' }}>.</span>
         </Link>
 
-        {/* Desktop nav */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }} className="hidden md:flex">
-          {navLinks.map(link => (
-            <Link
-              key={link.href}
-              href={link.href}
-              style={{
-                fontSize: '0.9rem', fontWeight: 500, textDecoration: 'none',
-                padding: '0.4rem 0.75rem', borderRadius: '8px',
-                color: pathname === link.href ? '#7C3AED' : '#4B5563',
-                background: pathname === link.href ? '#EDE9FE' : 'transparent',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {link.label}
-            </Link>
-          ))}
+        <nav className="hidden md:flex" style={{ alignItems: "center", justifyContent: "center", gap: "clamp(var(--space-4), 2.5vw, var(--space-6))", flex: 1 }}>
+          {visibleLinks.map((link) => {
+            const active = isActive(pathname, link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                style={{
+                  fontSize: "var(--text-sm)",
+                  fontWeight: "var(--font-semibold)",
+                  textDecoration: "none",
+                  padding: "var(--space-2) var(--space-3)",
+                  borderRadius: "var(--radius-lg)",
+                  color: active ? "#c4b5fd" : "rgba(255, 255, 255, 0.6)",
+                  background: active ? "rgba(167, 139, 250, 0.16)" : "transparent",
+                  transition: "all var(--transition-fast)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.color = "#f1f5f9";
+                    e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.color = "rgba(255, 255, 255, 0.6)";
+                    e.currentTarget.style.background = "transparent";
+                  }
+                }}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
 
-        {/* CTA */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexShrink: 0 }}>
           {user ? (
-            <>
-              {/* Profile Info Desktop */}
-              <div className="hidden md:flex" style={{ alignItems: 'center', gap: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <div style={{
-                    width: '2rem', height: '2rem', borderRadius: '50%',
-                    background: '#F3F4F6', color: '#7C3AED',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontWeight: 700, fontSize: '0.875rem'
-                  }}>
-                    {user.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#111827', lineHeight: 1 }}>
-                      {user.name}
-                    </span>
-                    <span style={{ fontSize: '0.75rem', color: '#6B7280', textTransform: 'capitalize' }}>
-                      {user.role}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Logout Action */}
-                <button
-                  onClick={logout}
-                  style={{
-                    background: 'none', border: '1px solid #E5E7EB',
-                    borderRadius: '8px', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    gap: '0.375rem', padding: '0.4rem 0.75rem',
-                    color: '#4B5563', fontSize: '0.8125rem', fontWeight: 600,
-                    transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = '#EF4444';
-                    e.currentTarget.style.borderColor = '#FCA5A5';
-                    e.currentTarget.style.backgroundColor = '#FEF2F2';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = '#4B5563';
-                    e.currentTarget.style.borderColor = '#E5E7EB';
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                >
-                  <LogOut size={14} />
-                  <span className="hidden sm:inline">Logout</span>
-                </button>
+            <div className="hidden sm:flex" style={{ alignItems: "center", gap: "var(--space-3)" }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                padding: "var(--space-2) var(--space-4)",
+                borderRadius: "var(--radius-full)",
+                background: "rgba(255, 255, 255, 0.06)",
+                border: "1px solid rgba(255, 255, 255, 0.12)",
+                color: "#f1f5f9",
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--font-bold)",
+                cursor: "pointer",
+                transition: "all var(--transition-fast)",
+              }}
+              title={`${user.name} (${user.role})`}
+              >
+                <span style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "28px",
+                  height: "28px",
+                  borderRadius: "var(--radius-full)",
+                  background: "linear-gradient(135deg, #7c3aed 0%, #db2777 100%)",
+                  color: "#f8fafc",
+                  fontSize: "var(--text-xs)",
+                  fontWeight: "var(--font-black)"
+                }}>
+                  {initials}
+                </span>
+                <span className="hidden lg:inline">{user.name?.split(" ")[0]}</span>
+                <span style={{
+                  color: "rgba(255, 255, 255, 0.5)",
+                  fontSize: "var(--text-xs)",
+                  textTransform: "capitalize",
+                  fontWeight: "var(--font-medium)"
+                }}>
+                  {user.role}
+                </span>
               </div>
-            </>
+              <button
+                onClick={logout}
+                title="Logout"
+                style={{
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  background: "rgba(255, 255, 255, 0.06)",
+                  color: "rgba(255, 255, 255, 0.7)",
+                  width: "2.6rem",
+                  height: "2.6rem",
+                  borderRadius: "var(--radius-full)",
+                  display: "grid",
+                  placeItems: "center",
+                  cursor: "pointer",
+                  transition: "all var(--transition-fast)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "rgba(239, 68, 68, 0.15)";
+                  e.currentTarget.style.color = "#f87171";
+                  e.currentTarget.style.borderColor = "rgba(239, 68, 68, 0.4)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.06)";
+                  e.currentTarget.style.color = "rgba(255, 255, 255, 0.7)";
+                  e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.12)";
+                }}
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div className="hidden sm:flex" style={{ alignItems: "center", gap: "var(--space-3)" }}>
               <Link
                 href="/login"
                 style={{
-                  fontSize: '0.875rem', fontWeight: 600,
-                  color: '#4B5563', textDecoration: 'none',
-                  padding: '0.5rem 1rem', borderRadius: '8px',
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "var(--space-2)",
+                  padding: "var(--space-3) var(--space-5)",
+                  borderRadius: "var(--radius-full)",
+                  background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
+                  color: "#f8fafc",
+                  fontSize: "var(--text-sm)",
+                  fontWeight: "var(--font-extrabold)",
+                  textDecoration: "none",
+                  boxShadow: "0 4px 15px rgba(139, 92, 246, 0.35)",
+                  transition: "all var(--transition-fast)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.boxShadow = "0 6px 20px rgba(139, 92, 246, 0.45)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "0 4px 15px rgba(139, 92, 246, 0.35)";
                 }}
               >
+                <Sparkles size={16} />
                 Sign In
-              </Link>
-              <Link
-                href="/login"
-                style={{
-                  fontSize: '0.875rem', fontWeight: 700,
-                  color: 'white', textDecoration: 'none',
-                  background: 'linear-gradient(135deg, #7C3AED 0%, #6366F1 100%)',
-                  padding: '0.5rem 1.25rem', borderRadius: '8px',
-                  boxShadow: '0 4px 10px rgba(124, 58, 237, 0.15)',
-                }}
-              >
-                Get Started
               </Link>
             </div>
           )}
 
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            style={{ display: 'none', padding: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', color: '#374151' }}
-            className="md:hidden flex"
+            className="md:hidden"
+            style={{
+              padding: "var(--space-2)",
+              background: "rgba(255, 255, 255, 0.06)",
+              border: "1px solid rgba(255, 255, 255, 0.12)",
+              borderRadius: "var(--radius-lg)",
+              color: "#f1f5f9",
+              display: "grid",
+              placeItems: "center",
+              cursor: "pointer",
+              transition: "all var(--transition-fast)",
+            }}
             aria-label="Toggle menu"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255, 255, 255, 0.12)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255, 255, 255, 0.06)";
+            }}
           >
-            {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
       </div>
 
-      {/* Mobile menu */}
       {mobileOpen && (
         <div style={{
-          position: 'absolute', top: '4rem', left: 0, right: 0,
-          background: 'white', borderBottom: '1px solid #E5E7EB',
-          padding: '1rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem',
+          position: "absolute",
+          top: "100%",
+          left: "var(--space-4)",
+          right: "var(--space-4)",
+          background: "rgba(18, 24, 38, 0.97)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          borderRadius: "var(--radius-2xl)",
+          boxShadow: "0 12px 40px rgba(0, 0, 0, 0.35)",
+          padding: "var(--space-4)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--space-2)",
+          marginTop: "var(--space-2)",
+          border: "1px solid rgba(255, 255, 255, 0.12)",
         }}>
-          {navLinks.map(link => (
-            <Link key={link.href} href={link.href} onClick={() => setMobileOpen(false)}
+          {visibleLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={() => setMobileOpen(false)}
               style={{
-                padding: '0.75rem 1rem', borderRadius: '8px', textDecoration: 'none',
-                fontSize: '0.9375rem', fontWeight: 500,
-                color: pathname === link.href ? '#7C3AED' : '#374151',
-                background: pathname === link.href ? '#EDE9FE' : 'transparent',
+                padding: "var(--space-3) var(--space-4)",
+                borderRadius: "var(--radius-lg)",
+                textDecoration: "none",
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--font-bold)",
+                color: isActive(pathname, link.href) ? "#f8fafc" : "rgba(255, 255, 255, 0.75)",
+                background: isActive(pathname, link.href) ? "rgba(139, 92, 246, 0.35)" : "rgba(255, 255, 255, 0.06)",
+                transition: "all var(--transition-fast)",
               }}
             >
               {link.label}
             </Link>
           ))}
-          {user && (
+          {user ? (
             <button
               onClick={() => { setMobileOpen(false); logout(); }}
               style={{
-                display: 'flex', alignItems: 'center', gap: '0.5rem',
-                margin: '0.5rem 1rem 0', padding: '0.75rem 1rem',
-                border: 'none', background: 'none', width: 'calc(100% - 2rem)',
-                textAlign: 'left', cursor: 'pointer', fontSize: '0.9375rem',
-                fontWeight: 600, color: '#EF4444',
+                marginTop: "var(--space-2)",
+                padding: "var(--space-3) var(--space-4)",
+                borderRadius: "var(--radius-lg)",
+                border: "1px solid rgba(255, 255, 255, 0.12)",
+                background: "rgba(255, 255, 255, 0.06)",
+                color: "rgba(255, 255, 255, 0.75)",
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--font-bold)",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                justifyContent: "center",
+                transition: "all var(--transition-fast)",
               }}
             >
               <LogOut size={16} />
-              <span>Log out ({user.name})</span>
+              Logout
             </button>
+          ) : (
+            <Link
+              href="/login"
+              onClick={() => setMobileOpen(false)}
+              style={{
+                marginTop: "var(--space-2)",
+                padding: "var(--space-3) var(--space-4)",
+                borderRadius: "var(--radius-lg)",
+                background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)",
+                color: "#f8fafc",
+                fontSize: "var(--text-sm)",
+                fontWeight: "var(--font-extrabold)",
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                justifyContent: "center",
+                boxShadow: "0 4px 15px rgba(107, 56, 212, 0.3)",
+                transition: "all var(--transition-fast)",
+              }}
+            >
+              <Sparkles size={16} />
+              Sign In
+            </Link>
           )}
         </div>
       )}

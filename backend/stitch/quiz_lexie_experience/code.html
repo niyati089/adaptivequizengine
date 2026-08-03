@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Quiz Experience | AdaptiveTutor</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary": "#000000",
+                    "primary-fixed": "#dde2f6",
+                    "on-tertiary-fixed": "#40000d",
+                    "secondary-fixed": "#e9ddff",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary-fixed-dim": "#ffb2b7",
+                    "surface-tint": "#585e6f",
+                    "primary": "#000000",
+                    "tertiary-container": "#40000d",
+                    "surface-dim": "#dcd9da",
+                    "primary-fixed-dim": "#c1c6d9",
+                    "secondary": "#6b38d4",
+                    "on-secondary": "#ffffff",
+                    "surface-container": "#f0edee",
+                    "on-primary-fixed": "#151b29",
+                    "background": "#fcf8fa",
+                    "on-tertiary": "#ffffff",
+                    "primary-container": "#151b29",
+                    "on-primary-fixed-variant": "#414756",
+                    "surface-container-low": "#f6f3f4",
+                    "inverse-primary": "#c1c6d9",
+                    "outline-variant": "#c6c6cc",
+                    "on-secondary-container": "#fffbff",
+                    "on-background": "#1b1b1d",
+                    "on-primary": "#ffffff",
+                    "surface-bright": "#fcf8fa",
+                    "inverse-surface": "#313031",
+                    "on-tertiary-container": "#f23d5c",
+                    "error": "#ba1a1a",
+                    "inverse-on-surface": "#f3f0f1",
+                    "outline": "#76777d",
+                    "on-primary-container": "#7e8395",
+                    "secondary-container": "#8455ef",
+                    "tertiary-fixed": "#ffdadb",
+                    "on-surface-variant": "#45464c",
+                    "on-error-container": "#93000a",
+                    "surface-container-high": "#eae7e9",
+                    "surface": "#fcf8fa",
+                    "on-surface": "#1b1b1d",
+                    "on-secondary-fixed": "#23005c",
+                    "surface-container-highest": "#e5e2e3",
+                    "secondary-fixed-dim": "#d0bcff",
+                    "on-tertiary-fixed-variant": "#92002a",
+                    "error-container": "#ffdad6",
+                    "on-secondary-fixed-variant": "#5516be",
+                    "surface-variant": "#e5e2e3",
+                    "on-error": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "base": "8px",
+                    "card-padding": "24px",
+                    "container-margin": "24px",
+                    "section-gap": "32px",
+                    "gutter": "20px"
+            },
+            "fontFamily": {
+                    "headline-sm": ["Geist"],
+                    "body-md": ["Geist"],
+                    "headline-lg": ["Geist"],
+                    "body-lg": ["Geist"],
+                    "body-sm": ["Geist"],
+                    "headline-lg-mobile": ["Geist"],
+                    "label-md": ["Geist"],
+                    "label-lg": ["Geist"],
+                    "display-lg": ["Geist"],
+                    "headline-md": ["Geist"]
+            },
+            "fontSize": {
+                    "headline-sm": ["18px", {"lineHeight": "1.4", "fontWeight": "600"}],
+                    "body-md": ["14px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+                    "body-lg": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "body-sm": ["12px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                    "label-md": ["12px", {"lineHeight": "1", "fontWeight": "500"}],
+                    "label-lg": ["14px", {"lineHeight": "1", "letterSpacing": "0.02em", "fontWeight": "600"}],
+                    "display-lg": ["40px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-md": ["24px", {"lineHeight": "1.3", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            font-family: 'Geist', sans-serif;
+            background-color: #fcf8fa;
+            background-image: radial-gradient(#dcd9da 0.5px, transparent 0.5px);
+            background-size: 24px 24px;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.04);
+        }
+        .selection-glow:hover {
+            box-shadow: 0 0 20px rgba(107, 56, 212, 0.15);
+        }
+    </style>
+</head>
+<body class="text-on-background min-h-screen flex flex-col">
+<!-- Top Navigation Bar -->
+<header class="bg-tertiary dark:bg-tertiary shadow-md flex justify-between items-center w-full px-container-margin py-4 max-w-full mx-auto sticky top-0 z-50">
+<div class="text-headline-md font-headline-md font-bold text-on-tertiary">AdaptiveTutor</div>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-on-tertiary-fixed-variant opacity-80 hover:opacity-100 transition-opacity text-label-lg font-label-lg hover:text-on-tertiary hover:scale-105 transition-transform duration-200" href="#">Home</a>
+<a class="bg-surface-bright text-tertiary font-bold rounded-full px-4 py-1 text-label-lg font-label-lg hover:scale-105 transition-transform duration-200" href="#">Quiz</a>
+<a class="text-on-tertiary-fixed-variant opacity-80 hover:opacity-100 transition-opacity text-label-lg font-label-lg hover:text-on-tertiary hover:scale-105 transition-transform duration-200" href="#">Challenges</a>
+<a class="text-on-tertiary-fixed-variant opacity-80 hover:opacity-100 transition-opacity text-label-lg font-label-lg hover:text-on-tertiary hover:scale-105 transition-transform duration-200" href="#">Classes</a>
+<a class="text-on-tertiary-fixed-variant opacity-80 hover:opacity-100 transition-opacity text-label-lg font-label-lg hover:text-on-tertiary hover:scale-105 transition-transform duration-200" href="#">Educator</a>
+<a class="text-on-tertiary-fixed-variant opacity-80 hover:opacity-100 transition-opacity text-label-lg font-label-lg hover:text-on-tertiary hover:scale-105 transition-transform duration-200" href="#">Analytics</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-on-tertiary p-2 rounded-full hover:bg-white/10 transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<div class="flex items-center gap-3 bg-white/10 rounded-full pl-1 pr-3 py-1">
+<img class="w-8 h-8 rounded-full object-cover" data-alt="A professional headshot of a friendly educator with a bright smile, wearing business casual attire. The image has high-key lighting and a clean, minimalist white background with soft shadows, fitting a modern corporate edtech aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA3Cg9kZ1EtSCtKoqEI-mUL8k2c8tRi__wo__a9iZ6peopwml6TiIh0N0l0417Grt316Ox6ccchOFpg9cvfk-QnkYdm3Fg-A0zXQ6SUTM1VGAiF_MHrSnkKnktjTreGUw9OnW8Mm8Sxmb0MYlmG5uNKdT40tMTbKyR48ctXjK6CfO9eT5N_NXB6lMNJUEMfb-xiNAuzY5EnRXlZJxHurdvp7dxvFKzG_Hu2JUTxUYoq7nwJ_ucLMYzTZQ"/>
+<div class="hidden sm:block">
+<p class="text-on-tertiary font-bold text-label-md">Simona Biles</p>
+<p class="text-on-tertiary/60 text-body-sm">simona@lexie.com</p>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow w-full max-w-7xl mx-auto px-container-margin py-section-gap grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+<!-- Left Column: Quiz Engine -->
+<section class="lg:col-span-8 flex flex-col gap-8">
+<!-- Progress Bar Card -->
+<div class="bg-surface-container-lowest rounded-[24px] p-card-padding shadow-sm border border-outline-variant/30">
+<div class="flex justify-between items-center mb-4">
+<span class="text-label-lg font-label-lg text-on-surface-variant">Question 4 of 12</span>
+<span class="text-label-lg font-label-lg text-secondary">75% Accuracy</span>
+</div>
+<div class="w-full bg-surface-container-high h-2.5 rounded-full overflow-hidden">
+<div class="bg-secondary h-full rounded-full transition-all duration-700 ease-out" style="width: 33%"></div>
+</div>
+</div>
+<!-- Question Card -->
+<div class="glass-card rounded-[24px] p-8 md:p-12 min-h-[400px] flex flex-col justify-center">
+<div class="mb-8">
+<span class="inline-block px-3 py-1 bg-secondary-fixed text-on-secondary-fixed-variant rounded-full text-label-md font-label-md mb-4">Context: Business Negotiations</span>
+<h1 class="text-headline-md md:text-headline-lg font-headline-lg text-on-surface leading-tight">
+                        Which of the following phrases is most appropriate for politely disagreeing in a formal boardroom setting?
+                    </h1>
+</div>
+<!-- Multiple Choice Options -->
+<div class="grid grid-cols-1 gap-4">
+<button class="group relative flex items-center p-6 bg-surface-container-lowest border border-outline-variant/40 rounded-[18px] text-left transition-all hover:border-secondary selection-glow">
+<div class="w-10 h-10 rounded-full border-2 border-outline-variant group-hover:border-secondary flex items-center justify-center mr-4 transition-colors">
+<span class="text-label-lg font-label-lg text-on-surface-variant group-hover:text-secondary">A</span>
+</div>
+<span class="text-body-lg font-body-lg text-on-surface group-hover:text-secondary-container transition-colors">"I completely disagree with that point."</span>
+<div class="absolute right-6 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-secondary">chevron_right</span>
+</div>
+</button>
+<button class="group relative flex items-center p-6 bg-surface-container-lowest border-2 border-secondary rounded-[18px] text-left transition-all selection-glow">
+<div class="w-10 h-10 rounded-full bg-secondary flex items-center justify-center mr-4">
+<span class="text-label-lg font-label-lg text-white">B</span>
+</div>
+<span class="text-body-lg font-body-lg text-secondary-container font-semibold">"I see your perspective, however, I have some reservations."</span>
+<div class="absolute right-6 opacity-100">
+<span class="material-symbols-outlined text-secondary">check_circle</span>
+</div>
+</button>
+<button class="group relative flex items-center p-6 bg-surface-container-lowest border border-outline-variant/40 rounded-[18px] text-left transition-all hover:border-secondary selection-glow">
+<div class="w-10 h-10 rounded-full border-2 border-outline-variant group-hover:border-secondary flex items-center justify-center mr-4 transition-colors">
+<span class="text-label-lg font-label-lg text-on-surface-variant group-hover:text-secondary">C</span>
+</div>
+<span class="text-body-lg font-body-lg text-on-surface group-hover:text-secondary-container transition-colors">"That doesn't make any sense at all."</span>
+<div class="absolute right-6 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-secondary">chevron_right</span>
+</div>
+</button>
+<button class="group relative flex items-center p-6 bg-surface-container-lowest border border-outline-variant/40 rounded-[18px] text-left transition-all hover:border-secondary selection-glow">
+<div class="w-10 h-10 rounded-full border-2 border-outline-variant group-hover:border-secondary flex items-center justify-center mr-4 transition-colors">
+<span class="text-label-lg font-label-lg text-on-surface-variant group-hover:text-secondary">D</span>
+</div>
+<span class="text-body-lg font-body-lg text-on-surface group-hover:text-secondary-container transition-colors">"I think we should just move on."</span>
+<div class="absolute right-6 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-secondary">chevron_right</span>
+</div>
+</button>
+</div>
+<!-- Actions -->
+<div class="flex justify-between items-center mt-12">
+<button class="px-8 py-3 bg-surface-container border border-outline-variant rounded-full text-on-surface-variant font-bold hover:bg-surface-container-high transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined">arrow_back</span>
+                        Back
+                    </button>
+<button class="px-10 py-3 bg-tertiary text-on-tertiary rounded-full font-bold hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center gap-2">
+                        Next Question
+                        <span class="material-symbols-outlined">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Right Column: Socratic AI Assistant -->
+<aside class="lg:col-span-4 sticky top-24 flex flex-col gap-6">
+<!-- AI Header -->
+<div class="flex items-center gap-4 mb-2">
+<div class="w-12 h-12 bg-secondary rounded-2xl flex items-center justify-center shadow-lg transform -rotate-3">
+<span class="material-symbols-outlined text-white text-3xl" style="font-variation-settings: 'FILL' 1;">psychology</span>
+</div>
+<div>
+<h3 class="text-headline-sm font-headline-sm text-on-surface">Socratic AI</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant">Thinking...</p>
+</div>
+</div>
+<!-- Conversational Bubbles -->
+<div class="flex flex-col gap-4">
+<div class="bg-surface-container-lowest p-5 rounded-[20px] rounded-tl-none border border-outline-variant/30 shadow-sm relative">
+<p class="text-body-md font-body-md text-on-surface-variant italic">
+                        "Consider the social stakes here, Simona. In formal settings, direct contradiction is often seen as aggressive. How might we maintain respect while expressing a different view?"
+                    </p>
+</div>
+<div class="bg-secondary-fixed/50 p-5 rounded-[20px] rounded-tl-none border border-secondary/20 shadow-sm">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-secondary text-sm" style="font-variation-settings: 'FILL' 1;">lightbulb</span>
+<span class="text-label-md font-label-md text-on-secondary-fixed-variant uppercase tracking-wider">Hint</span>
+</div>
+<p class="text-body-md font-body-md text-on-surface">
+                        Look for 'softeners'—words like 'however' or 'perspective'—that acknowledge the other person's contribution before introducing your own.
+                    </p>
+</div>
+<div class="glass-card p-6 rounded-[24px] border border-secondary/10 overflow-hidden relative group">
+<div class="absolute inset-0 bg-gradient-to-br from-secondary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="relative z-10">
+<h4 class="text-label-lg font-label-lg text-secondary mb-3 flex items-center gap-2">
+<span class="material-symbols-outlined">menu_book</span>
+                            Language Insight
+                        </h4>
+<p class="text-body-sm font-body-sm leading-relaxed text-on-surface-variant mb-4">
+                            In linguistics, this is called 'Politeness Theory.' By using the phrase "I see your perspective," you are preserving the speaker's 'face' while preparing them for a counter-point.
+                        </p>
+<button class="text-secondary font-bold text-label-md hover:underline flex items-center gap-1">
+                            Read more about Modal Verbs
+                            <span class="material-symbols-outlined text-sm">open_in_new</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Statistics Mini-Card -->
+<div class="bg-tertiary-fixed p-6 rounded-[24px] border border-tertiary-fixed-dim/30">
+<div class="flex justify-between items-center mb-4">
+<span class="text-label-md font-label-md text-on-tertiary-fixed-variant">Session Streak</span>
+<span class="px-2 py-0.5 bg-white/50 rounded-full text-label-sm font-label-sm text-tertiary">LVL 4</span>
+</div>
+<div class="flex items-end gap-1 h-12">
+<div class="flex-grow bg-white/40 h-[20%] rounded-t-sm"></div>
+<div class="flex-grow bg-white/40 h-[40%] rounded-t-sm"></div>
+<div class="flex-grow bg-white/40 h-[30%] rounded-t-sm"></div>
+<div class="flex-grow bg-white/40 h-[60%] rounded-t-sm"></div>
+<div class="flex-grow bg-white h-[90%] rounded-t-sm animate-pulse"></div>
+<div class="flex-grow bg-white/20 h-[10%] rounded-t-sm"></div>
+<div class="flex-grow bg-white/20 h-[10%] rounded-t-sm"></div>
+</div>
+<p class="text-body-sm font-body-sm text-on-tertiary-fixed-variant mt-4 opacity-70">
+                    You're 3 questions away from your daily goal!
+                </p>
+</div>
+</aside>
+</main>
+<!-- Footer -->
+<footer class="bg-surface dark:bg-surface-dim border-t border-outline-variant mt-auto">
+<div class="flex flex-col md:flex-row justify-between items-center w-full px-container-margin py-section-gap max-w-7xl mx-auto">
+<div class="flex flex-col md:flex-row items-center gap-8">
+<span class="text-label-lg font-headline-sm text-primary">AdaptiveTutor</span>
+<div class="flex gap-6">
+<a class="text-on-surface-variant hover:text-secondary transition-colors text-label-md font-label-md" href="#">Privacy</a>
+<a class="text-on-surface-variant hover:text-secondary transition-colors text-label-md font-label-md" href="#">Terms</a>
+<a class="text-on-surface-variant hover:text-secondary transition-colors text-label-md font-label-md" href="#">Support</a>
+<a class="text-on-surface-variant hover:text-secondary transition-colors text-label-md font-label-md" href="#">Contact</a>
+</div>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface-variant mt-4 md:mt-0">
+                © 2024 AdaptiveTutor. All rights reserved.
+            </p>
+</div>
+</footer>
+<!-- Interactive Micro-interactions Script -->
+<script>
+        // Simple selection logic for buttons
+        const optionButtons = document.querySelectorAll('button[class*="selection-glow"]');
+        optionButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                optionButtons.forEach(b => {
+                    b.classList.remove('border-secondary', 'bg-secondary/5');
+                    b.classList.add('border-outline-variant/40');
+                });
+                btn.classList.remove('border-outline-variant/40');
+                btn.classList.add('border-secondary', 'bg-secondary/5');
+            });
+        });
+
+        // Atmospheric grid mouse tracking effect
+        document.addEventListener('mousemove', (e) => {
+            const x = e.clientX / window.innerWidth;
+            const y = e.clientY / window.innerHeight;
+            document.body.style.backgroundPosition = `${x * 10}px ${y * 10}px`;
+        });
+    </script>
+</body></html>

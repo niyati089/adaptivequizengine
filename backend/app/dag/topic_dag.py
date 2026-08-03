@@ -13,12 +13,11 @@ class TopicDAGEngine:
     
     def __init__(self, api_key: str):
         self.graph = nx.DiGraph()
-        self.api_key = api_key.strip()
+        self.api_key = api_key.strip() if api_key else ""
         
     def generate_dag_and_notes(self, topic: str) -> dict:
         client = Groq(
-            api_key=self.api_key,
-            http_client=httpx.Client(verify=False)
+            api_key=self.api_key
         )
         prompt = f"""You are an expert educator. The user wants to learn about: "{topic}"
 

@@ -1,151 +1,136 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { getQuizHistory } from '@/services/quizService';
-import Link from 'next/link';
-import { ChevronDown, CheckCircle, XCircle, BookOpen, TrendingUp, ArrowLeft } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ChevronRight, CheckCircle, XCircle, Clock, TrendingUp, BookOpen, Brain, ArrowLeft } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { getQuizHistory } from "@/services/quizService";
+import { DancingSquares } from "@/components/shared/DancingSquares";
 
-interface Question {
+interface Attempt {
   id: number;
   question_text: string;
-  options: Record<string, string>;
   selected_option: string;
   correct_option: string;
   is_correct: boolean;
-  explanation: string;
-  misconception: string | null;
+  answer_options: { [key: string]: string } | null;
+  explanation: string | null;
+  bloom_level: string | null;
+  difficulty: number | null;
   theta_before: number;
   theta_after: number;
-  bloom_level: string;
-  timestamp: string;
+  misconception: string | null;
+  timestamp: string | null;
 }
 
-interface SubtopicData {
-  questions: Question[];
-  stats: {
-    total: number;
-    correct: number;
-    accuracy: number;
-  };
-}
-
-interface TopicData {
-  subtopics: Record<string, SubtopicData>;
-  stats: {
-    total_questions: number;
-    correct: number;
-    accuracy: number;
-  };
-}
-
-interface HistoryData {
-  user_id: number;
-  user_name: string;
+interface GroupedHistory {
+  topic: string;
+  subtopic: string;
   total_attempts: number;
-  history: Record<string, TopicData>;
+  correct_attempts: number;
+  accuracy: number;
+  attempts: Attempt[];
 }
 
 export default function QuizHistoryPage() {
-  const { api } = useAuth();
-  const [history, setHistory] = useState<HistoryData | null>(null);
+  const router = useRouter();
+  const { user, isLoading: authLoading } = useAuth();
+  const [history, setHistory] = useState<{ grouped_history: GroupedHistory[]; total_attempts: number; overall_accuracy: number } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [selectedAttempt, setSelectedAttempt] = useState<Attempt | null>(null);
 
   useEffect(() => {
-    const fetchHistory = async () => {
-      try {
-        if (!api) {
-          console.error('❌ API not available');
-          setError('API instance not available. Please try logging in again.');
-          setLoading(false);
-          return;
-        }
-        
-        console.log('📊 Fetching quiz history...');
-        const data = await getQuizHistory(api);
-        
-        console.log('✓ Quiz history fetched:', {
-          user: data.user_name,
-          total_attempts: data.total_attempts,
-          topics: Object.keys(data.history).length
-        });
-        
-        setHistory(data);
-        setError(null);
-      } catch (error: any) {
-        console.error('❌ Failed to fetch quiz history:', error);
-        
-        const errorMsg = error?.response?.data?.detail || 
-                        error?.message || 
-                        'Failed to load quiz history';
-        
-        setError(errorMsg);
-        setHistory(null);
-      } finally {
-        setLoading(false);
-      }
+    if (authLoading) return;
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    getQuizHistory()
+      .then((data) => setHistory(data))
+      .catch((e) => console.error("Failed to load quiz history:", e))
+      .finally(() => setLoading(false));
+  }, [authLoading, user, router]);
+
+  const toggleGroup = (topic: string, subtopic: string) => {
+    const key = `${topic}|${subtopic}`;
+    const newExpanded = new Set(expandedGroups);
+    if (newExpanded.has(key)) {
+      newExpanded.delete(key);
+    } else {
+      newExpanded.add(key);
+    }
+    setExpandedGroups(newExpanded);
+  };
+
+  const formatDate = (timestamp: string | null) => {
+    if (!timestamp) return "Unknown";
+    const date = new Date(timestamp);
+    return date.toLocaleDateString("en-US", { 
+      month: "short", 
+      day: "numeric", 
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
+  const getBloomColor = (level: string | null) => {
+    if (!level) return "var(--muted)";
+    const colors: { [key: string]: string } = {
+      "remember": "var(--primary)",
+      "understand": "var(--info)",
+      "apply": "var(--success)",
+      "analyze": "var(--warning)",
+      "evaluate": "var(--error)",
+      "create": "var(--primary-light)"
     };
-
-    fetchHistory();
-  }, [api]);
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return colors[level.toLowerCase()] || "var(--muted)";
   };
 
-  const getAccuracyColor = (accuracy: number) => {
-    if (accuracy >= 80) return { bg: '#ECFDF5', text: '#059669', label: 'Excellent' };
-    if (accuracy >= 60) return { bg: '#FEF3C7', text: '#D97706', label: 'Good' };
-    return { bg: '#FEE2E2', text: '#DC2626', label: 'Needs Work' };
-  };
-
-  if (loading) {
+  if (authLoading || loading || !user) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F9FAFB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '1rem', color: '#6B7280', marginBottom: '1rem' }}>Loading your quiz history...</div>
-          <div style={{ width: '40px', height: '40px', border: '3px solid #E5E7EB', borderTop: '3px solid #7C3AED', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />
-        </div>
+      <div className="app-page" style={{ minHeight: "60vh", display: "grid", placeItems: "center" }}>
+        <DancingSquares size="lg" label="Loading your quiz history..." />
       </div>
     );
   }
 
-  if (error) {
+  if (!history || history.grouped_history.length === 0) {
     return (
-      <div style={{ minHeight: '100vh', background: '#F9FAFB', padding: '2rem 1.5rem' }}>
-        <div style={{ maxWidth: '72rem', margin: '0 auto' }}>
-          <Link href="/dashboard" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: '#7C3AED', marginBottom: '2rem', textDecoration: 'none' }}>
-            <ArrowLeft size={16} /> Back to Dashboard
-          </Link>
-          <div style={{ background: '#FEE2E2', border: '1px solid #FECACA', borderRadius: '12px', padding: '2rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.125rem', color: '#DC2626', fontWeight: 600, marginBottom: '0.5rem' }}>Error Loading Quiz History</div>
-            <div style={{ fontSize: '0.9375rem', color: '#991B1B', marginBottom: '1.5rem' }}>{error}</div>
-            <button
-              onClick={() => window.location.reload()}
-              style={{ background: '#DC2626', color: 'white', border: 'none', padding: '0.75rem 1.5rem', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
-            >
-              Try Again
-            </button>
+      <div className="app-page">
+        <div className="app-shell-wide">
+          <div style={{ marginBottom: "var(--space-8)" }}>
+            <Link href="/dashboard" style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", color: "var(--primary)", textDecoration: "none", fontWeight: "var(--font-semibold)" }}>
+              <ArrowLeft size="var(--icon-lg)" />
+              Back to Dashboard
+            </Link>
           </div>
-        </div>
-      </div>
-    );
-  }
 
-  if (!history) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#F9FAFB', padding: '2rem 1.5rem' }}>
-        <div style={{ maxWidth: '72rem', margin: '0 auto' }}>
-          <Link href="/dashboard" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: '#7C3AED', marginBottom: '2rem', textDecoration: 'none' }}>
-            <ArrowLeft size={16} /> Back to Dashboard
-          </Link>
-          <div style={{ textAlign: 'center', padding: '3rem 1.5rem', background: 'white', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
-            <div style={{ fontSize: '1.125rem', color: '#6B7280', marginBottom: '0.5rem' }}>No quiz history yet</div>
-            <div style={{ fontSize: '0.9375rem', color: '#9CA3AF' }}>Start taking quizzes to see your progress here!</div>
-            <Link href="/quiz" style={{ display: 'inline-block', marginTop: '1.5rem', padding: '0.75rem 1.5rem', background: '#7C3AED', color: 'white', borderRadius: '8px', textDecoration: 'none', fontWeight: 500 }}>
-              Start a Quiz
+          <div className="card" style={{ textAlign: "center", padding: "var(--space-12) var(--space-8)" }}>
+            <BookOpen size="var(--icon-3xl)" color="var(--muted)" style={{ marginBottom: "var(--space-4)" }} />
+            <h2 style={{ fontSize: "var(--text-2xl)", fontWeight: "var(--font-extrabold)", margin: "0 0 var(--space-2)" }}>No quiz attempts yet</h2>
+            <p style={{ color: "var(--muted)", margin: "0 0 var(--space-6)" }}>
+              Take your first quiz to start building your history!
+            </p>
+            <Link
+              href="/quiz"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                background: "var(--primary)",
+                color: "white",
+                padding: "var(--space-3) var(--space-6)",
+                borderRadius: "var(--radius-full)",
+                textDecoration: "none",
+                fontWeight: "var(--font-bold)"
+              }}
+            >
+              Start Quiz
+              <ChevronRight size="var(--icon-lg)" />
             </Link>
           </div>
         </div>
@@ -154,109 +139,347 @@ export default function QuizHistoryPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F9FAFB', fontFamily: "'Inter', sans-serif", padding: '2rem 1.5rem' }}>
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ marginBottom: '2rem' }}>
-          <Link href="/dashboard" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', color: '#7C3AED', marginBottom: '1rem', textDecoration: 'none', fontSize: '0.9375rem', fontWeight: 500 }}>
-            <ArrowLeft size={16} /> Back to Dashboard
-          </Link>
-          <h1 style={{ fontSize: '2rem', fontWeight: 900, color: '#111827', marginBottom: '0.5rem' }}>Quiz History</h1>
-          <p style={{ fontSize: '1rem', color: '#6B7280' }}>Review all your attempted questions and track your progress</p>
-        </div>
-
-        {/* Summary Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-              <BookOpen size={20} color="#7C3AED" />
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#6B7280' }}>Total Attempts</span>
-            </div>
-            <div style={{ fontSize: '1.875rem', fontWeight: 900, color: '#111827' }}>{history.total_attempts}</div>
+    <div className="app-page">
+      <div className="app-shell-wide">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-8)" }}>
+          <div>
+            <Link href="/dashboard" style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)", color: "var(--primary)", textDecoration: "none", fontWeight: "var(--font-semibold)", marginBottom: "var(--space-2)" }}>
+              <ArrowLeft size="var(--icon-lg)" />
+              Back to Dashboard
+            </Link>
+            <h1 className="chunky-heading" style={{ fontSize: "var(--heading-lg)", margin: "var(--space-2) 0 0" }}>Quiz History</h1>
+            <p style={{ color: "var(--muted)", margin: "var(--space-2) 0 0" }}>
+              Review your past attempts and track your progress
+            </p>
           </div>
-          <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-              <CheckCircle size={20} color="#059669" />
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#6B7280' }}>Topics Covered</span>
+
+          <div style={{ display: "flex", gap: "var(--space-4)" }}>
+            <div className="stat-card" style={{ padding: "var(--space-4) var(--space-6)", minWidth: "140px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+                <Brain size="var(--icon-lg)" color="var(--primary)" />
+                <span style={{ color: "var(--muted)", fontSize: "var(--text-xs)", fontWeight: "var(--font-black)", textTransform: "uppercase" }}>Total Attempts</span>
+              </div>
+              <div className="stat-number">{history.total_attempts}</div>
             </div>
-            <div style={{ fontSize: '1.875rem', fontWeight: 900, color: '#111827' }}>{Object.keys(history.history).length}</div>
-          </div>
-          <div style={{ background: 'white', padding: '1.5rem', borderRadius: '12px', border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-              <TrendingUp size={20} color="#D97706" />
-              <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#6B7280' }}>Overall Accuracy</span>
-            </div>
-            <div style={{ fontSize: '1.875rem', fontWeight: 900, color: '#111827' }}>
-              {(() => {
-                let total = 0, correct = 0;
-                for (const topic of Object.values(history.history)) {
-                  total += topic.stats.total_questions;
-                  correct += topic.stats.correct;
-                }
-                return `${total > 0 ? Math.round((correct / total) * 100) : 0}%`;
-              })()}
+
+            <div className="stat-card" style={{ padding: "var(--space-4) var(--space-6)", minWidth: "140px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+                <TrendingUp size="var(--icon-lg)" color="var(--coral)" />
+                <span style={{ color: "var(--muted)", fontSize: "var(--text-xs)", fontWeight: "var(--font-black)", textTransform: "uppercase" }}>Accuracy</span>
+              </div>
+              <div className="stat-number">{history.overall_accuracy}%</div>
             </div>
           </div>
         </div>
 
-        {/* Topics List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {Object.entries(history.history).map(([topic, topicData]) => {
-            const accuracyColor = getAccuracyColor(topicData.stats.accuracy);
-
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+          {history.grouped_history.map((group) => {
+            const key = `${group.topic}|${group.subtopic}`;
+            const isExpanded = expandedGroups.has(key);
+            
             return (
-              <div key={topic} style={{ background: 'white', borderRadius: '12px', border: '1px solid #E5E7EB', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-                {/* Topic Header - Click to view details */}
+              <div key={key} className="card" style={{ overflow: "hidden" }}>
                 <div
-                  onClick={() => {
-                    const params = new URLSearchParams({ topic });
-                    window.location.href = `/quiz-history/topic-detail?${params}`;
-                  }}
                   style={{
-                    width: '100%',
-                    padding: '1.5rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '1rem',
-                    background: 'white',
-                    cursor: 'pointer',
-                    transition: 'background 0.2s',
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "var(--space-5) var(--space-6)",
+                    cursor: "pointer",
+                    background: isExpanded ? "var(--surface-low)" : "transparent"
                   }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#F9FAFB'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                  onClick={() => toggleGroup(group.topic, group.subtopic)}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, textAlign: 'left' }}>
-                    <BookOpen size={24} color="#7C3AED" />
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)" }}>
+                    <div style={{
+                      width: "var(--icon-3xl)",
+                      height: "var(--icon-3xl)",
+                      borderRadius: "var(--radius-lg)",
+                      background: "var(--primary-soft)",
+                      display: "grid",
+                      placeItems: "center"
+                    }}>
+                      <BookOpen size="var(--icon-xl)" color="var(--primary)" />
+                    </div>
                     <div>
-                      <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#111827', margin: 0, marginBottom: '0.25rem' }}>{topic}</h2>
-                      <div style={{ display: 'flex', gap: '1rem', fontSize: '0.8125rem', color: '#6B7280' }}>
-                        <span>{topicData.stats.total_questions} questions</span>
-                        <span>{topicData.stats.correct} correct</span>
-                        <span style={{ color: accuracyColor.text, fontWeight: 600 }}>{topicData.stats.accuracy.toFixed(1)}% accuracy</span>
+                      <h3 style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-extrabold)", margin: 0 }}>{group.topic}</h3>
+                      <p style={{ color: "var(--muted)", fontSize: "var(--text-sm)", margin: "var(--space-1) 0 0" }}>{group.subtopic}</p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: "var(--space-8)" }}>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "var(--text-xl)", fontWeight: "var(--font-extrabold)", color: group.accuracy >= 70 ? "var(--primary)" : group.accuracy >= 50 ? "var(--warning)" : "var(--coral)" }}>
+                        {group.accuracy}%
+                      </div>
+                      <div style={{ color: "var(--muted)", fontSize: "var(--text-xs)" }}>
+                        {group.correct_attempts}/{group.total_attempts} correct
                       </div>
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    <div style={{ background: accuracyColor.bg, color: accuracyColor.text, padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.8125rem', fontWeight: 600 }}>
-                      {accuracyColor.label}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '6px', background: '#F3F4F6' }}>
-                      <ChevronDown size={20} color="#6B7280" style={{ transform: 'rotate(-90deg)' }} />
-                    </div>
+                    <ChevronRight
+                      size="var(--icon-lg)"
+                      color="var(--muted)"
+                      style={{ transition: "transform var(--transition-base)", transform: isExpanded ? "rotate(90deg)" : "none" }}
+                    />
                   </div>
                 </div>
+                
+                {isExpanded && (
+                  <div style={{ borderTop: "1px solid var(--outline)", padding: "var(--space-6)" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+                      {group.attempts.map((attempt) => (
+                        <div
+                          key={attempt.id}
+                          className="card"
+                          style={{
+                            padding: "var(--space-4) var(--space-5)",
+                            cursor: "pointer",
+                            background: attempt.is_correct ? "var(--success-soft)" : "var(--error-soft)",
+                            borderColor: attempt.is_correct ? "var(--success)" : "var(--error)"
+                          }}
+                          onClick={() => setSelectedAttempt(attempt)}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: "var(--space-4)" }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+                                {attempt.is_correct ? (
+                                  <CheckCircle size="var(--icon-sm)" color="var(--success)" />
+                                ) : (
+                                  <XCircle size="var(--icon-sm)" color="var(--error)" />
+                                )}
+                                <span style={{ fontSize: "var(--text-sm)", color: "var(--muted)" }}>
+                                  {formatDate(attempt.timestamp)}
+                                </span>
+                                {attempt.bloom_level && (
+                                  <span
+                                    style={{
+                                      fontSize: "var(--text-xs)",
+                                      padding: "var(--space-1) var(--space-2)",
+                                      borderRadius: "var(--radius-sm)",
+                                      background: getBloomColor(attempt.bloom_level),
+                                      color: "white",
+                                      fontWeight: "var(--font-semibold)",
+                                      textTransform: "capitalize"
+                                    }}
+                                  >
+                                    {attempt.bloom_level}
+                                  </span>
+                                )}
+                              </div>
+                              <p style={{ fontSize: "var(--text-base)", fontWeight: "var(--font-semibold)", margin: 0, lineHeight: "var(--leading-snug)" }}>
+                                {attempt.question_text.length > 100
+                                  ? attempt.question_text.substring(0, 100) + "..."
+                                  : attempt.question_text}
+                              </p>
+                            </div>
+
+                            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", alignItems: "end" }}>
+                              <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)" }}>
+                                θ: {attempt.theta_before.toFixed(2)} → {attempt.theta_after.toFixed(2)}
+                              </div>
+                              {attempt.difficulty && (
+                                <div style={{ fontSize: "var(--text-sm)", color: "var(--muted)" }}>
+                                  b: {attempt.difficulty.toFixed(2)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* Question Detail Modal */}
+      {selectedAttempt && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.5)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: "var(--z-modal)",
+            padding: "var(--space-4)"
+          }}
+          onClick={() => setSelectedAttempt(null)}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: "700px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              padding: "var(--space-8)"
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "var(--space-6)" }}>
+              <h2 style={{ fontSize: "var(--text-2xl)", fontWeight: "var(--font-extrabold)", margin: 0 }}>Question Details</h2>
+              <button
+                onClick={() => setSelectedAttempt(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "var(--space-2)",
+                  borderRadius: "var(--radius-md)"
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginBottom: "var(--space-6)" }}>
+              <p style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-semibold)", lineHeight: "var(--leading-relaxed)", margin: 0 }}>
+                {selectedAttempt.question_text}
+              </p>
+            </div>
+
+            {selectedAttempt.answer_options && (
+              <div style={{ marginBottom: "var(--space-6)" }}>
+                <h4 style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-bold)", color: "var(--muted)", marginBottom: "var(--space-3)", textTransform: "uppercase" }}>
+                  Answer Options
+                </h4>
+                <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                  {Object.entries(selectedAttempt.answer_options).map(([key, value]) => {
+                    const isSelected = key === selectedAttempt.selected_option;
+                    const isCorrect = key === selectedAttempt.correct_option;
+
+                    let bgColor = "var(--surface-low)";
+                    let borderColor = "var(--outline)";
+
+                    if (isSelected && isCorrect) {
+                      bgColor = "var(--success-soft)";
+                      borderColor = "var(--success)";
+                    } else if (isSelected && !isCorrect) {
+                      bgColor = "var(--error-soft)";
+                      borderColor = "var(--error)";
+                    } else if (isCorrect) {
+                      bgColor = "var(--success-soft)";
+                      borderColor = "var(--success)";
+                    }
+
+                    return (
+                      <div
+                        key={key}
+                        style={{
+                          padding: "var(--space-3) var(--space-4)",
+                          borderRadius: "var(--radius-md)",
+                          background: bgColor,
+                          border: `1px solid ${borderColor}`,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "var(--space-3)"
+                        }}
+                      >
+                        <span style={{
+                          fontWeight: "var(--font-bold)",
+                          fontSize: "var(--text-sm)",
+                          minWidth: "var(--space-6)"
+                        }}>
+                          {key}
+                        </span>
+                        <span style={{ fontSize: "var(--text-base)" }}>{value}</span>
+                        {isCorrect && (
+                          <CheckCircle size="var(--icon-sm)" color="var(--success)" style={{ marginLeft: "auto" }} />
+                        )}
+                        {isSelected && !isCorrect && (
+                          <XCircle size="var(--icon-sm)" color="var(--error)" style={{ marginLeft: "auto" }} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {selectedAttempt.explanation && (
+              <div style={{ marginBottom: "var(--space-6)" }}>
+                <h4 style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-bold)", color: "var(--muted)", marginBottom: "var(--space-3)", textTransform: "uppercase" }}>
+                  Explanation
+                </h4>
+                <div style={{
+                  padding: "var(--space-4)",
+                  background: "var(--surface-low)",
+                  borderRadius: "var(--radius-md)",
+                  fontSize: "var(--text-base)",
+                  lineHeight: "var(--leading-relaxed)"
+                }}>
+                  {selectedAttempt.explanation}
+                </div>
+              </div>
+            )}
+
+            {selectedAttempt.misconception && (
+              <div style={{ marginBottom: "var(--space-6)" }}>
+                <h4 style={{ fontSize: "var(--text-sm)", fontWeight: "var(--font-bold)", color: "var(--coral)", marginBottom: "var(--space-3)", textTransform: "uppercase" }}>
+                  Misconception Identified
+                </h4>
+                <div style={{
+                  padding: "var(--space-4)",
+                  background: "var(--error-soft)",
+                  borderRadius: "var(--radius-md)",
+                  fontSize: "var(--text-base)",
+                  lineHeight: "var(--leading-relaxed)",
+                  border: "1px solid var(--error)"
+                }}>
+                  {selectedAttempt.misconception}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "var(--space-4)", padding: "var(--space-4)", background: "var(--surface-low)", borderRadius: "var(--radius-md)" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginBottom: "var(--space-1)" }}>Ability (θ) Change</div>
+                <div style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-bold)" }}>
+                  {selectedAttempt.theta_before.toFixed(2)} → {selectedAttempt.theta_after.toFixed(2)}
+                </div>
+              </div>
+              {selectedAttempt.difficulty && (
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginBottom: "var(--space-1)" }}>Difficulty (b)</div>
+                  <div style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-bold)" }}>
+                    {selectedAttempt.difficulty.toFixed(2)}
+                  </div>
+                </div>
+              )}
+              {selectedAttempt.bloom_level && (
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "var(--text-xs)", color: "var(--muted)", marginBottom: "var(--space-1)" }}>Bloom's Level</div>
+                  <div style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-bold)", textTransform: "capitalize" }}>
+                    {selectedAttempt.bloom_level}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: "var(--space-6)", textAlign: "center" }}>
+              <button
+                onClick={() => setSelectedAttempt(null)}
+                style={{
+                  background: "var(--primary)",
+                  color: "white",
+                  border: "none",
+                  padding: "var(--space-3) var(--space-8)",
+                  borderRadius: "var(--radius-full)",
+                  fontWeight: "var(--font-bold)",
+                  cursor: "pointer",
+                  fontSize: "var(--text-base)"
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
