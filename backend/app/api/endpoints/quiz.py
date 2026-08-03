@@ -361,12 +361,49 @@ async def get_quiz_history(
         for rs in review_schedules
     }
 
+    # Import here to avoid circular imports
+    from app.repetition.adaptive_sm2_scheduler import AdaptiveSM2Scheduler
+    from datetime import datetime, timedelta
+    _scheduler = AdaptiveSM2Scheduler()
+
     # Calculate accuracy for each group and attach next_review_date
     result = []
     for key, data in grouped_data.items():
         accuracy = (data["correct_attempts"] / data["total_attempts"] * 100) if data["total_attempts"] > 0 else 0
-        # ReviewSchedule is now auto-persisted on every submit — just read from map
+
+        # 1. Use persisted ReviewSchedule date if it exists
         next_review_date = review_map.get(data["topic"])
+
+        # 2. Otherwise calculate using Adaptive SM-2 from existing attempt signals
+        if not next_review_date and data["attempts"]:
+            rating = min(5, max(0, int(accuracy / 20)))
+            latest = data["attempts"][0]  # sorted desc by timestamp
+            theta = float(latest.get("theta_after") or 0.0)
+            difficulty = float(latest.get("difficulty") or 0.0)
+
+            last_ts = latest.get("timestamp")
+            try:
+                last_dt = datetime.fromisoformat(last_ts) if last_ts else datetime.utcnow()
+            except Exception:
+                last_dt = datetime.utcnow()
+
+            # Seed with total_attempts as repetition_count for realistic interval scaling
+            rep_count = max(0, data["total_attempts"] - 1)
+            interval_basis = 1 if rep_count == 0 else (6 if rep_count == 1 else rep_count * 3)
+
+            params = _scheduler.calculate_next_review_adaptive(
+                rating=rating,
+                ease_factor=2.5,
+                interval_days=interval_basis,
+                repetition_count=rep_count,
+                theta=theta,
+                difficulty=difficulty,
+                target_retention=0.85,
+            )
+
+            anchored = last_dt + timedelta(days=params["interval_days"])
+            next_review_date = anchored.isoformat()
+
         result.append({
             "topic": data["topic"],
             "subtopic": data["subtopic"],
