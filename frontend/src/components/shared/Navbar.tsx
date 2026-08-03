@@ -284,7 +284,6 @@ export const Navbar: React.FC = () => {
                   e.currentTarget.style.boxShadow = "0 4px 15px rgba(139, 92, 246, 0.35)";
                 }}
               >
-                <Sparkles size={16} />
                 Sign In
               </Link>
             </div>
@@ -398,7 +397,6 @@ export const Navbar: React.FC = () => {
                 transition: "all var(--transition-fast)",
               }}
             >
-              <Sparkles size={16} />
               Sign In
             </Link>
           )}

@@ -23,7 +23,7 @@ export default function Home() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "var(--space-12)", alignItems: "center" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
               <span className="badge badge-purple">
-                <Sparkles size={16} /> Powered by Adaptive AI
+                Powered by Adaptive AI
               </span>
               <h1 className="chunky-heading" style={{ fontSize: "var(--heading-2xl)", maxWidth: "42rem" }}>
                 Master any subject with <span style={{ color: "var(--primary)", fontStyle: "italic" }}>AI tutoring</span>

@@ -136,7 +136,6 @@ function ResultsContent() {
               </div>
             )}
             <div style={{ padding: 'var(--space-3)', background: 'var(--primary-soft)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--primary-light)', marginTop: 'var(--space-3)', display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start' }}>
-              <Sparkles size={16} color="var(--primary)" style={{ marginTop: '1px', flexShrink: 0 }} />
               <p style={{ fontSize: 'var(--text-sm)', color: 'var(--primary)', margin: 0, lineHeight: 'var(--leading-snug)' }}>
                 Spaced repetition scheduled for {topic}{subtopic ? ` (${subtopic})` : ''} based on today's performance.
               </p>

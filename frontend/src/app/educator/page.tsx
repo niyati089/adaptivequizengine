@@ -275,7 +275,6 @@ export default function EducatorPage() {
               />
             )}
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-              <Sparkles size={18} color="var(--coral)" />
               <h2 style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-black)", margin: 0 }}>AI Educator Insights</h2>
             </div>
             <InsightCard

@@ -70,7 +70,7 @@ export default function DashboardPage() {
     { icon: Brain, label: "Current Theta", value: `${summary.current_theta >= 0 ? "+" : ""}${summary.current_theta}`, sub: `Delta ${summary.theta_delta >= 0 ? "+" : ""}${summary.theta_delta}`, color: "var(--primary)", wash: "var(--blue-soft)" },
     { icon: Star, label: "Overall Accuracy", value: `${summary.accuracy}%`, sub: `${summary.total_questions} questions answered`, color: "var(--coral)", wash: "var(--pink-soft)" },
     { icon: Target, label: "Topics Mastered", value: `${masteredCount}/${topic_mastery.length || 0}`, sub: "At 70%+ accuracy", color: "var(--primary)", wash: "var(--primary-soft)" },
-    { icon: Sparkles, label: "Topics Practiced", value: String(summary.topics_practiced), sub: "Across all sessions", color: "var(--warning)", wash: "var(--warning-soft)" },
+    { icon: BookOpen, label: "Topics Practiced", value: String(summary.topics_practiced), sub: "Across all sessions", color: "var(--warning)", wash: "var(--warning-soft)" },
   ];
 
   return (
@@ -82,7 +82,6 @@ export default function DashboardPage() {
             <p style={{ color: "var(--muted)", fontSize: "var(--text-base)", margin: "var(--space-2) 0 0" }}>Here is your adaptive learning progress.</p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", background: "var(--surface-low)", border: "1px solid var(--outline)", borderRadius: "var(--radius-full)", padding: "var(--space-2) var(--space-4)" }}>
-            <Sparkles size={16} color="var(--primary)" />
             <span style={{ color: "var(--primary)", fontWeight: "var(--font-extrabold)", fontSize: "var(--text-xs)" }}>AI Coach Active</span>
           </div>
         </header>
@@ -168,7 +167,6 @@ export default function DashboardPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "var(--space-5)" }}>
               <div className="card" style={{ background: "rgba(221, 226, 246, 0.55)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-4)" }}>
-                  <Sparkles size={18} color="var(--primary)" />
                   <h2 style={{ fontSize: "var(--text-lg)", fontWeight: "var(--font-black)", margin: 0 }}>AI Insights</h2>
                 </div>
                 {[

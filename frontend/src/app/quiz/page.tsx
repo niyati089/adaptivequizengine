@@ -1708,8 +1708,7 @@ function QuizContent() {
           <span style={{ fontSize: "var(--text-sm)" }}>🔥 4 Day Streak</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", color: "var(--primary-strong)", fontWeight: "var(--font-extrabold)" }}>
-          <Sparkles size={18} />
-          <span style={{ fontSize: "var(--text-sm)" }}>✨ Total XP: {xp} XP</span>
+          <span style={{ fontSize: "var(--text-sm)" }}>⚡ Total XP: {xp} XP</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", color: timerColor, fontWeight: "var(--font-extrabold)" }}>
           <Clock size={18} />

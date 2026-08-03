@@ -38,7 +38,7 @@ export default function LoginPage() {
       <main className="app-shell-wide">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--space-8)', alignItems: 'center', minHeight: 'calc(100vh - 12rem)' }}>
           <section>
-            <span className="badge badge-green"><Sparkles size={16} style={{ width: 'var(--icon-sm)', height: 'var(--icon-sm)' }} /> Auth Gateway</span>
+            <span className="badge badge-green">Auth Gateway</span>
             <h1 className="chunky-heading" style={{ fontSize: 'var(--heading-xl)', margin: 'var(--space-6) 0' }}>
               Enter your learning space
             </h1>
