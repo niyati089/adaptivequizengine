@@ -310,12 +310,51 @@ async def get_quiz_history(
         for rs in review_schedules
     }
 
+    # Import here to avoid circular imports
+    from app.repetition.adaptive_sm2_scheduler import AdaptiveSM2Scheduler
+    from datetime import datetime
+    _scheduler = AdaptiveSM2Scheduler()
+
     # Calculate accuracy for each group and attach next_review_date
     result = []
     for key, data in grouped_data.items():
         accuracy = (data["correct_attempts"] / data["total_attempts"] * 100) if data["total_attempts"] > 0 else 0
-        # Match review schedule by topic name (topic_id == topic string)
+
+        # 1. Use persisted ReviewSchedule date if it exists
         next_review_date = review_map.get(data["topic"])
+
+        # 2. Otherwise auto-calculate using Adaptive SM-2 from attempt signals
+        if not next_review_date and data["attempts"]:
+            # Map accuracy (0-100) → SM-2 quality rating (0-5)
+            rating = min(5, int(accuracy / 20))
+
+            # Pull IRT signals from the most recent attempt
+            latest = data["attempts"][0]  # already sorted desc by timestamp
+            theta     = float(latest.get("theta_after") or 0.0)
+            difficulty = float(latest.get("difficulty") or 0.0)
+
+            # Use last attempt timestamp as the baseline "last reviewed" date
+            last_ts = latest.get("timestamp")
+            try:
+                last_dt = datetime.fromisoformat(last_ts) if last_ts else datetime.utcnow()
+            except Exception:
+                last_dt = datetime.utcnow()
+
+            # Seed SM-2 with first-time defaults
+            params = _scheduler.calculate_next_review_adaptive(
+                rating=rating,
+                ease_factor=2.5,
+                interval_days=0,
+                repetition_count=0,
+                theta=theta,
+                difficulty=difficulty,
+                target_retention=0.85,
+            )
+            # Anchor review date relative to last attempt, not now
+            from datetime import timedelta
+            anchored = last_dt + timedelta(days=params["interval_days"])
+            next_review_date = anchored.isoformat()
+
         result.append({
             "topic": data["topic"],
             "subtopic": data["subtopic"],
@@ -325,6 +364,7 @@ async def get_quiz_history(
             "next_review_date": next_review_date,
             "attempts": data["attempts"]
         })
+
     
     # Sort by most recent attempt
     result.sort(key=lambda x: max(
