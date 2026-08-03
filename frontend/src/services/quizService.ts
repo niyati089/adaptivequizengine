@@ -214,7 +214,8 @@ export const getStudentFlaggedAttempts = async (studentId: number) => {
   return response.data;
 };
 
-export const getQuizHistory = async () => {
-  const response = await api.get('/quiz/history');
+export const getQuizHistory = async (customApi?: any) => {
+  const client = customApi || api;
+  const response = await client.get('/quiz/history');
   return response.data;
 };
