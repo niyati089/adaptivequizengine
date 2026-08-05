@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from groq import Groq
 import json
+import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from app.core.config import resolve_groq_api_key
@@ -52,7 +53,11 @@ async def generate_question(req: QuestionRequest, db: Session = Depends(get_db))
     if not api_key:
         raise HTTPException(status_code=400, detail="API key required")
 
-    client = Groq(api_key=api_key)
+    # Create Groq client with SSL verification disabled to fix Windows certificate issues
+    client = Groq(
+        api_key=api_key,
+        http_client=httpx.Client(verify=False)
+    )
     difficulty_label = ThetaEstimator.theta_to_label(req.difficulty)
     avoid = "\n".join(f"- {q}" for q in req.previous_questions[-5:]) if req.previous_questions else "None"
 
@@ -66,6 +71,8 @@ Bloom's Taxonomy level: {req.bloom_level}
 Previously asked questions (DO NOT repeat these):
 {avoid}
 
+IMPORTANT: Vary the position of the correct answer across A, B, C, and D. Do NOT always put it in position A.
+
 Respond ONLY with valid JSON (no markdown, no backticks):
 {{
   "question": "The question text",
@@ -76,12 +83,12 @@ Respond ONLY with valid JSON (no markdown, no backticks):
     "C": "Option C text",
     "D": "Option D text"
   }},
-  "correct_answer": "A",
+  "correct_answer": "B",
   "explanation": "Why this answer is correct, and what misconception each wrong answer represents",
   "difficulty": {req.difficulty},
   "bloom_level": "{req.bloom_level}",
   "misconceptions": {{
-    "B": "What misunderstanding leads to choosing B",
+    "A": "What misunderstanding leads to choosing A",
     "C": "What misunderstanding leads to choosing C",
     "D": "What misunderstanding leads to choosing D"
   }}
@@ -185,7 +192,10 @@ async def submit_answer(
             api_key = resolve_groq_api_key(req.api_key)
             if api_key:
                 try:
-                    groq_client = Groq(api_key=api_key)
+                    groq_client = Groq(
+                        api_key=api_key,
+                        http_client=httpx.Client(verify=False)
+                    )
                 except Exception:
                     groq_client = None
 

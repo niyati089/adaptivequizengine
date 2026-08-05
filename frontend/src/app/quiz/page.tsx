@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { BarChart2, CheckCircle, ChevronRight, Clock, Lightbulb, XCircle, AlertTriangle, Loader2, Trophy, Target, Brain, Home, RotateCcw, ChevronDown, Flame, Shield, BookOpen, Sparkles, Camera, TrendingUp, Lock } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { generateQuestion, generateTopicDag, getClassQuiz, getExplanation, getSocraticHint, recordProctoringEvent, scheduleReview, submitAnswer } from "@/services/quizService";
+import { generateQuestion, generateTopicDag, getClassQuiz, getExplanation, getSocraticHint, recordProctoringEvent, scheduleReview, submitAnswer, startProctoringSession } from "@/services/quizService";
 import { DancingSquares } from "@/components/shared/DancingSquares";
 import { MermaidDiagram } from "@/components/shared/MermaidDiagram";
 import { useProctoring } from "@/hooks/useProctoring";
@@ -91,6 +91,8 @@ function QuizContent() {
  const [proctoringExceeded, setProctoringExceeded] = useState(false);
  const [lastProctoringEvent, setLastProctoringEvent] = useState("");
  const [cameraMinimized, setCameraMinimized] = useState(false);
+ const [proctoringSessionToken, setProctoringSessionToken] = useState<string | null>(null);
+ const [quickNotification, setQuickNotification] = useState<string | null>(null);
  
  // Redesigned UI states
  const [xp, setXp] = useState(0);
@@ -132,7 +134,12 @@ function QuizContent() {
  setSelectedSubtopic(quiz.subtopic || "General");
  setBloomLevel(quiz.bloom_level || "Remembering");
  setDifficulty(quiz.starting_difficulty || 0);
- setProctoringEnabled(quiz.enable_proctoring || false);
+ 
+ // Enable proctoring if the quiz has it enabled
+ const shouldEnableProctoring = quiz.enable_proctoring || false;
+ setProctoringEnabled(shouldEnableProctoring);
+ console.log('[Quiz Setup] Proctoring enabled:', shouldEnableProctoring);
+ 
  setMaxProctoringWarnings(quiz.max_proctoring_warnings || 3);
  } catch (e) {
  console.error("Failed to load class quiz:", e);
@@ -208,16 +215,52 @@ function QuizContent() {
  setMisconceptionTags([]);
  setQIndex(0);
  setScore(0);
- setProctoringWarnings(0);
- setProctoringExceeded(false);
+ setProctoringWarnings(0); // Reset violations for this quiz attempt
+ setProctoringExceeded(false); // Reset exceeded flag for this quiz attempt
+ setProctoringSessionToken(null); // Reset session token
  setShowProctoringWarning(false);
  setMessage(null);
+ 
+ // Enter fullscreen mode for proctored classroom quizzes
+ if (classQuiz?.enable_proctoring && isClassroomQuiz) {
+ enterFullscreen();
+ }
+ 
  fetchNextQuestion(startingTheta);
  // Start proctoring if enabled
  if (classQuiz?.enable_proctoring) {
+ // Create a new proctoring session for this quiz attempt
+ startProctoringSession(classQuiz.id)
+ .then(response => {
+ setProctoringSessionToken(response.session_token);
+ console.log('[Proctoring] Session started with token:', response.session_token);
  proctoring.start().catch(err => {
  console.error("Failed to start proctoring:", err);
  setMessage("Failed to start camera. Please check permissions.");
+ });
+ })
+ .catch(err => {
+ console.error("Failed to start proctoring session:", err);
+ setMessage("Failed to initialize proctoring.");
+ });
+ }
+ };
+
+ // Fullscreen functions
+ const enterFullscreen = () => {
+ const element = document.documentElement;
+ if (element.requestFullscreen) {
+ element.requestFullscreen().catch(err => {
+ console.error("Failed to enter fullscreen:", err);
+ setMessage("Please allow fullscreen mode for proctored quizzes.");
+ });
+ }
+ };
+
+ const exitFullscreen = () => {
+ if (document.fullscreenElement && document.exitFullscreen) {
+ document.exitFullscreen().catch(err => {
+ console.error("Failed to exit fullscreen:", err);
  });
  }
  };
@@ -227,7 +270,44 @@ function QuizContent() {
  if (proctoringEnabled) {
  proctoring.stop();
  }
+ // Exit fullscreen mode
+ exitFullscreen();
  setQuizState('results');
+ };
+
+ // Auto-submit when violations exceeded
+ const autoSubmitQuizDueToViolations = async () => {
+ console.log('[Proctoring] Auto-submitting quiz due to violations');
+ 
+ // If there's a pending question, submit it first
+ if (q && !submitted) {
+ // Submit with selected answer or default to first option
+ const answerToSubmit = selected !== null ? selected : 0;
+ try {
+ await submitAnswer({
+ user_id: user?.id,
+ classroom_id: classQuiz?.classroom_id,
+ classroom_quiz_id: isClassroomQuiz ? classQuiz?.id : undefined,
+ theta,
+ difficulty,
+ selected_option: q.optKeys[answerToSubmit],
+ correct_answer: q.optKeys[q.correct],
+ topic: inputTopic,
+ subtopic: selectedSubtopic,
+ question: q.question,
+ question_index: qIndex + 1,
+ misconceptions: q.misconceptions,
+ answer_options: Object.fromEntries(q.optKeys.map((k: string, idx: number) => [k, q.options[idx]])),
+ explanation: q.explanation,
+ bloom_level: bloomLevel
+ });
+ } catch (err) {
+ console.error('[Proctoring] Failed to submit final answer:', err);
+ }
+ }
+ 
+ // End the test and show results
+ handleEndTest();
  };
 
  const handleRestartQuiz = () => {
@@ -312,19 +392,22 @@ function QuizContent() {
  eventData?: string,
  severity?: 'low' | 'medium' | 'high' | 'critical'
  ) => {
- if (!proctoringEnabled || !classQuiz) {
- console.log('[Proctoring] Event not recorded - proctoring disabled or no quiz', { proctoringEnabled, hasQuiz: !!classQuiz });
+ // Don't record events if quiz is not playing or already exceeded
+ if (!proctoringEnabled || !classQuiz || quizState !== "playing" || proctoringExceeded) {
+ console.log('[Proctoring] Event not recorded - proctoring disabled, no quiz, quiz not playing, or limit exceeded', 
+ { proctoringEnabled, hasQuiz: !!classQuiz, quizState, proctoringExceeded });
  return;
  }
 
- console.log('[Proctoring] Recording event:', { eventType, eventData, severity, quizId: classQuiz.id });
+ console.log('[Proctoring] Recording event:', { eventType, eventData, severity, quizId: classQuiz.id, sessionToken: proctoringSessionToken });
 
  try {
  const response = await recordProctoringEvent({
  classroom_quiz_id: classQuiz.id,
  event_type: eventType,
  event_data: eventData,
- severity: severity || (eventType === 'tab_switch' || eventType === 'window_blur' || eventType === 'looking_away' ? 'low' : eventType === 'multiple_people' ? 'critical' : 'medium')
+ severity: severity || (eventType === 'tab_switch' || eventType === 'window_blur' || eventType === 'looking_away' ? 'low' : eventType === 'multiple_people' ? 'critical' : 'medium'),
+ session_token: proctoringSessionToken || undefined
  });
 
  console.log('[Proctoring] Event recorded successfully:', response);
@@ -347,59 +430,175 @@ function QuizContent() {
  looking_away: "looking away from screen"
  };
  setLastProctoringEvent(eventLabels[eventType] || eventType);
+ 
+ // Show instant notification with violation count
+ const violationMessage = `Violation ${response.warning_count}/${response.max_warnings}: ${eventLabels[eventType] || eventType}`;
+ setMessage(violationMessage);
+ setQuickNotification(violationMessage);
+ 
+ // Auto-hide notifications
+ setTimeout(() => setMessage(null), 3000);
+ setTimeout(() => setQuickNotification(null), 2000);
+ 
+ // Auto-stop quiz if violations exceeded
+ if (response.exceeded) {
+ console.log('[Proctoring] Violation limit exceeded - auto-submitting quiz');
+ setMessage("Maximum violations exceeded. Quiz is being auto-submitted...");
+ setTimeout(() => {
+ autoSubmitQuizDueToViolations();
+ }, 1500); // Give user time to see the warning
+ }
 
  // Auto-hide warning after 5 seconds
  setTimeout(() => setShowProctoringWarning(false), 5000);
  } catch (e) {
  console.error("[Proctoring] Failed to record proctoring event:", e);
  }
- }, [proctoringEnabled, classQuiz]);
+ }, [proctoringEnabled, classQuiz, proctoringSessionToken, proctoringExceeded, quizState]);
+
+ // Cooldown tracking for proctoring events to prevent duplicate violations from same action
+ const proctoringCooldownRef = useRef<Record<string, number>>({});
+ const PROCTORING_COOLDOWN_MS = 2000; // 2 second cooldown between same violation types
 
  // Proctoring event listeners
  useEffect(() => {
  if (!proctoringEnabled || quizState !== "playing") return;
 
- // Tab visibility change detection
+ console.log('[Proctoring] Setting up event listeners...');
+
+ // Tab visibility change detection (better detection)
  const handleVisibilityChange = () => {
+ console.log('[Proctoring] Visibility change detected, hidden:', document.hidden);
  if (document.hidden) {
- recordProctoringEventHandler('tab_switch', 'User left the tab');
+ // Check cooldown for tab_switch events
+ const now = Date.now();
+ const lastTime = proctoringCooldownRef.current['tab_switch'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['tab_switch'] = now;
+ recordProctoringEventHandler('tab_switch', 'User left the tab or switched tabs');
+ } else {
+ console.log('[Proctoring] Tab switch event ignored (cooldown)');
+ }
+ }
+ };
+
+ // Focus/blur detection for additional tab switching
+ const handleFocusChange = () => {
+ console.log('[Proctoring] Focus lost detected');
+ // Check cooldown - use window_blur as the type
+ const now = Date.now();
+ const lastTime = proctoringCooldownRef.current['window_blur'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['window_blur'] = now;
+ recordProctoringEventHandler('window_blur', 'User left the browser window or tab');
+ } else {
+ console.log('[Proctoring] Window blur event ignored (cooldown)');
  }
  };
 
  // Window blur detection (user clicked outside browser)
  const handleWindowBlur = () => {
+ console.log('[Proctoring] Window blur detected');
+ // Check cooldown
+ const now = Date.now();
+ const lastTime = proctoringCooldownRef.current['window_blur'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['window_blur'] = now;
  recordProctoringEventHandler('window_blur', 'User left the browser window');
+ } else {
+ console.log('[Proctoring] Window blur event ignored (cooldown)');
+ }
  };
 
  // Copy detection
  const handleCopy = (e: ClipboardEvent) => {
  const selectedText = window.getSelection()?.toString() || '';
+ console.log('[Proctoring] Copy detected:', selectedText.substring(0, 50));
+ // Check cooldown
+ const now = Date.now();
+ const lastTime = proctoringCooldownRef.current['copy'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['copy'] = now;
  recordProctoringEventHandler('copy', `Copied text: ${selectedText.substring(0, 50)}`);
+ }
  };
 
  // Paste detection
  const handlePaste = (e: ClipboardEvent) => {
+ console.log('[Proctoring] Paste detected');
+ // Check cooldown
+ const now = Date.now();
+ const lastTime = proctoringCooldownRef.current['paste'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['paste'] = now;
  recordProctoringEventHandler('paste', 'Attempted to paste content');
+ }
  };
 
  // Context menu (right-click) detection
  const handleContextMenu = (e: MouseEvent) => {
- e.preventDefault(); // Optionally prevent context menu
+ e.preventDefault(); // Prevent context menu
+ console.log('[Proctoring] Right-click detected');
+ // Check cooldown
+ const now = Date.now();
+ const lastTime = proctoringCooldownRef.current['context_menu'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['context_menu'] = now;
  recordProctoringEventHandler('context_menu', 'Right-click detected');
+ }
  };
 
+ // Keyboard shortcuts detection (Alt+Tab, Ctrl+Tab, etc.)
+ const handleKeyDown = (e: KeyboardEvent) => {
+ const now = Date.now();
+ 
+ // Alt+Tab (switching between applications)
+ if (e.altKey && e.key === 'Tab') {
+ console.log('[Proctoring] Alt+Tab detected');
+ const lastTime = proctoringCooldownRef.current['tab_switch'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['tab_switch'] = now;
+ recordProctoringEventHandler('tab_switch', 'Alt+Tab application switch detected');
+ }
+ }
+ // Ctrl+Tab (switching between browser tabs)
+ if (e.ctrlKey && e.key === 'Tab') {
+ console.log('[Proctoring] Ctrl+Tab detected');
+ const lastTime = proctoringCooldownRef.current['tab_switch'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['tab_switch'] = now;
+ recordProctoringEventHandler('tab_switch', 'Ctrl+Tab browser tab switch detected');
+ }
+ }
+ // Windows key
+ if (e.key === 'Meta' || e.key === 'OS') {
+ console.log('[Proctoring] Windows key detected');
+ const lastTime = proctoringCooldownRef.current['tab_switch'] || 0;
+ if (now - lastTime > PROCTORING_COOLDOWN_MS) {
+ proctoringCooldownRef.current['tab_switch'] = now;
+ recordProctoringEventHandler('tab_switch', 'Windows key pressed');
+ }
+ }
+ };
+
+ // Add all event listeners
  document.addEventListener('visibilitychange', handleVisibilityChange);
  window.addEventListener('blur', handleWindowBlur);
+ window.addEventListener('blur', handleFocusChange);
  document.addEventListener('copy', handleCopy);
  document.addEventListener('paste', handlePaste);
  document.addEventListener('contextmenu', handleContextMenu);
+ document.addEventListener('keydown', handleKeyDown);
 
  return () => {
+ console.log('[Proctoring] Removing event listeners...');
  document.removeEventListener('visibilitychange', handleVisibilityChange);
  window.removeEventListener('blur', handleWindowBlur);
+ window.removeEventListener('blur', handleFocusChange);
  document.removeEventListener('copy', handleCopy);
  document.removeEventListener('paste', handlePaste);
  document.removeEventListener('contextmenu', handleContextMenu);
+ document.removeEventListener('keydown', handleKeyDown);
  };
  }, [proctoringEnabled, quizState, recordProctoringEventHandler]);
 
@@ -407,7 +606,7 @@ function QuizContent() {
  const lastAIEventTimeRef = useRef<Record<string, number>>({});
 
  useEffect(() => {
- if (!proctoringEnabled || quizState !== "playing" || !proctoring.ready) return;
+ if (!proctoringEnabled || quizState !== "playing" || !proctoring.ready || proctoringExceeded) return;
 
  const checkDetectionViolations = () => {
  const now = Date.now();
@@ -474,7 +673,30 @@ function QuizContent() {
  // Check violations every 1 second
  const interval = setInterval(checkDetectionViolations, 1000);
  return () => clearInterval(interval);
- }, [proctoringEnabled, quizState, proctoring.ready, proctoring.detection, recordProctoringEventHandler]);
+ }, [proctoringEnabled, quizState, proctoring.ready, proctoring.detection, recordProctoringEventHandler, proctoringExceeded]);
+
+ // Handle fullscreen exit detection for proctored quizzes
+ useEffect(() => {
+ if (!proctoringEnabled || !isClassroomQuiz) return;
+
+ const handleFullscreenChange = () => {
+ if (!document.fullscreenElement) {
+ console.log('[Proctoring] Fullscreen exited detected');
+ recordProctoringEventHandler('tab_switch', 'Exited fullscreen mode');
+ // Try to re-enter fullscreen
+ setTimeout(() => {
+ if (quizState === "playing") {
+ enterFullscreen();
+ }
+ }, 100);
+ }
+ };
+
+ document.addEventListener('fullscreenchange', handleFullscreenChange);
+ return () => {
+ document.removeEventListener('fullscreenchange', handleFullscreenChange);
+ };
+ }, [proctoringEnabled, isClassroomQuiz, quizState, recordProctoringEventHandler]);
 
  const finalizeAnswerRef = useRef<(opts?: { timedOut?: boolean }) => void>(() => {});
 
@@ -1125,6 +1347,24 @@ function QuizContent() {
  Mastery: {Math.round(((theta + 3.0) / 6.0) * 100)}%
  </span>
  </div>
+ 
+ {/* Proctoring Violations Badge */}
+ {proctoringEnabled && (
+ <div style={{ 
+ display: "flex", 
+ alignItems: "center", 
+ gap: "var(--space-1)", 
+ padding: "var(--space-1) var(--space-3)", 
+ background: proctoringExceeded ? "var(--error-soft)" : "rgba(245, 158, 11, 0.1)",
+ border: `1px solid ${proctoringExceeded ? "var(--error)" : "rgba(245, 158, 11, 0.3)"}`,
+ borderRadius: "var(--radius-full)" 
+ }} title={`Proctoring violations: ${proctoringWarnings}/${maxProctoringWarnings}`}>
+ <AlertTriangle size={14} color={proctoringExceeded ? "var(--error)" : "var(--warning)"} />
+ <span style={{ fontSize: "var(--text-xs)", fontWeight: "var(--font-extrabold)", color: proctoringExceeded ? "var(--error-strong)" : "var(--warning-strong)" }}>
+ Violations: {proctoringWarnings}/{maxProctoringWarnings}
+ </span>
+ </div>
+ )}
  </div>
 
  {!isClassroomQuiz ? (
@@ -1169,8 +1409,43 @@ function QuizContent() {
  warnings={proctoringWarnings}
  maxWarnings={maxProctoringWarnings}
  exceeded={proctoringExceeded}
- onDismiss={() => setShowProctoringWarning(false)}
+ onDismiss={() => {
+ // Don't allow dismissal if violations exceeded - quiz will auto-submit
+ if (!proctoringExceeded) {
+ setShowProctoringWarning(false);
+ }
+ }}
  />
+
+ {/* Quick Violation Notification */}
+ {quickNotification && (
+ <div style={{
+ position: 'fixed',
+ top: '20px',
+ right: '20px',
+ background: '#dc2626',
+ color: 'white',
+ padding: '1rem 1.5rem',
+ borderRadius: '0.75rem',
+ boxShadow: '0 10px 30px rgba(220, 38, 38, 0.3)',
+ zIndex: 3000,
+ transform: 'translateX(0)',
+ transition: 'all 0.3s ease-out',
+ border: '2px solid #991b1b',
+ fontWeight: 700,
+ fontSize: '0.9rem',
+ maxWidth: '320px'
+ }}>
+ <div style={{
+ display: 'flex',
+ alignItems: 'center',
+ gap: '0.5rem'
+ }}>
+ <AlertTriangle size={18} />
+ {quickNotification}
+ </div>
+ </div>
+ )}
 
  {/* ─── STAGE 2: TWO-COLUMN MAIN QUIZ & TUTOR WORKSPACE ─── */}
  <div style={{ display: "flex", flexDirection: "row", gap: "var(--space-6)", flexWrap: "wrap", alignItems: "stretch" }}>

@@ -19,6 +19,10 @@ class ProctoringEvent(Base):
     classroom_quiz_id = Column(Integer, ForeignKey("classroom_quizzes.id"), index=True, nullable=False)
     attempt_id = Column(Integer, ForeignKey("question_attempts.id", ondelete="SET NULL"), index=True, nullable=True)
 
+    # Session token to group events from the same quiz attempt
+    # This ensures violations are tracked per quiz attempt, not accumulated across all attempts
+    session_token = Column(String, index=True, nullable=True)
+
     # Event type - expanded to include AI proctoring events
     # Browser: "tab_switch", "copy", "paste", "context_menu", "window_blur"
     # AI Vision: "no_face_detected", "multiple_people", "phone_detected",

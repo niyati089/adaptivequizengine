@@ -1,4 +1,6 @@
 ﻿from typing import Optional, Literal
+import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -25,6 +27,7 @@ class ProctoringEventCreate(BaseModel):
     attempt_id: Optional[int] = None
     severity: Literal["low", "medium", "high", "critical"] = "medium"
     confidence: Optional[int] = Field(None, ge=0, le=100, description="AI confidence (0-100)")
+    session_token: Optional[str] = None  # Token to group events from same quiz attempt
 
 class ProctoringEventResponse(BaseModel):
     event_id: int
@@ -33,6 +36,45 @@ class ProctoringEventResponse(BaseModel):
     exceeded: bool
     severity: str
     confidence: Optional[int]
+    session_token: str  # Return token for client to include in future events
+
+class ProctoringSessionStartResponse(BaseModel):
+    session_token: str
+    quiz_id: int
+    max_warnings: int
+
+@router.post("/session/start")
+def start_proctoring_session(
+    classroom_quiz_id: int,
+    student: User = Depends(get_current_student),
+    db: Session = Depends(get_db)
+):
+    """Start a new proctoring session for a quiz attempt.
+    
+    Returns a session token that should be included in all proctoring events
+    for this quiz. This ensures violations are tracked per quiz attempt,
+    not accumulated across all attempts.
+    """
+    quiz = db.query(ClassroomQuiz).filter(
+        ClassroomQuiz.id == classroom_quiz_id
+    ).first()
+
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    if not quiz.enable_proctoring:
+        raise HTTPException(
+            status_code=400,
+            detail="Proctoring is not enabled for this quiz"
+        )
+
+    session_token = str(uuid.uuid4())
+    
+    return ProctoringSessionStartResponse(
+        session_token=session_token,
+        quiz_id=classroom_quiz_id,
+        max_warnings=quiz.max_proctoring_warnings or 3
+    )
 
 @router.post("/event", response_model=ProctoringEventResponse)
 def record_proctoring_event(
@@ -46,6 +88,7 @@ def record_proctoring_event(
     AI vision-based events (face detection, object detection, gaze tracking).
 
     Returns the current warning count and whether the threshold has been exceeded.
+    The session_token ensures violations are isolated per quiz attempt.
     """
     # Verify the quiz exists and has proctoring enabled
     quiz = db.query(ClassroomQuiz).filter(
@@ -60,6 +103,9 @@ def record_proctoring_event(
             status_code=400,
             detail="Proctoring is not enabled for this quiz"
         )
+
+    # Use session token if provided, otherwise generate one (for backward compatibility)
+    session_token = event.session_token or str(uuid.uuid4())
 
     # Auto-assign severity based on event type if not provided
     severity_map = {
@@ -86,21 +132,39 @@ def record_proctoring_event(
         event_data=event.event_data,
         severity=final_severity,
         confidence=event.confidence,
-        is_false_positive=False
+        is_false_positive=False,
+        session_token=session_token
     )
     db.add(proctoring_event)
     db.commit()
     db.refresh(proctoring_event)
 
-    # Count total events for this user on this quiz
-    warning_count = db.query(func.count(ProctoringEvent.id)).filter(
-        ProctoringEvent.user_id == student.id,
-        ProctoringEvent.classroom_quiz_id == event.classroom_quiz_id,
-        ProctoringEvent.is_false_positive == False  # Don't count false positives
-    ).scalar() or 0
+    # Count events ONLY from the current session
+    # This ensures violations are per quiz attempt, not accumulated
+    # We filter by session_token to isolate events within this quiz session
+    
+    # For new session-based tracking: only count events with the same session token
+    # This prevents accumulation from previous quiz attempts
+    try:
+        warning_count = db.query(func.count(ProctoringEvent.id)).filter(
+            ProctoringEvent.user_id == student.id,
+            ProctoringEvent.classroom_quiz_id == event.classroom_quiz_id,
+            ProctoringEvent.session_token == session_token,  # Same session only
+            ProctoringEvent.is_false_positive == False,  # Don't count false positives
+        ).scalar() or 0
+    except Exception as e:
+        # Fallback if session_token column doesn't exist yet (migration not run)
+        # This will be removed after migration is confirmed to have run
+        print(f"[Proctoring] Warning: session_token query failed, using fallback: {e}")
+        # Count all violations for this user+quiz (pre-session-based tracking)
+        warning_count = db.query(func.count(ProctoringEvent.id)).filter(
+            ProctoringEvent.user_id == student.id,
+            ProctoringEvent.classroom_quiz_id == event.classroom_quiz_id,
+            ProctoringEvent.is_false_positive == False
+        ).scalar() or 0
 
     max_warnings = quiz.max_proctoring_warnings or 3
-    exceeded = warning_count > max_warnings
+    exceeded = warning_count >= max_warnings
 
     return ProctoringEventResponse(
         event_id=proctoring_event.id,
@@ -108,7 +172,8 @@ def record_proctoring_event(
         max_warnings=max_warnings,
         exceeded=exceeded,
         severity=final_severity,
-        confidence=event.confidence
+        confidence=event.confidence,
+        session_token=session_token
     )
 
 @router.patch("/event/{event_id}/mark-false-positive")

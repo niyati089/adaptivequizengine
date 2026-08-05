@@ -8,7 +8,7 @@ openai
 networkx
 pytest
 python-dotenv
-httpx<0.28.0
+httpx
 pytest-asyncio
 python-jose[cryptography]
 bcrypt==3.2.2

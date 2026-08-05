@@ -29,6 +29,14 @@ export interface AnswerRequest {
   bloom_level?: string | null;
 }
 
+export interface ProctoringEventRequest {
+  classroom_quiz_id: number;
+  event_type: 'tab_switch' | 'copy' | 'paste' | 'context_menu' | 'window_blur' | 'no_face_detected' | 'multiple_people' | 'phone_detected' | 'paper_detected' | 'looking_away';
+  event_data?: string;
+  severity?: 'low' | 'medium' | 'high' | 'critical';
+  session_token?: string;
+}
+
 export const generateQuestion = async (params: QuestionRequest) => {
   const response = await api.post('/quiz/generate', params);
   return response.data;
@@ -196,7 +204,7 @@ export const getClassQuiz = async (quizId: number) => {
   return response.data;
 };
 
-export const recordProctoringEvent = async (event: ProctoringEvent): Promise<ProctoringEventResponse> => {
+export const recordProctoringEvent = async (event: ProctoringEventRequest) => {
   const response = await api.post('/proctoring/event', event);
   return response.data;
 };
@@ -217,5 +225,10 @@ export const getStudentFlaggedAttempts = async (studentId: number) => {
 export const getQuizHistory = async (customApi?: any) => {
   const client = customApi || api;
   const response = await client.get('/quiz/history');
+  return response.data;
+};
+
+export const startProctoringSession = async (classroomQuizId: number) => {
+  const response = await api.post(`/proctoring/session/start?classroom_quiz_id=${classroomQuizId}`);
   return response.data;
 };

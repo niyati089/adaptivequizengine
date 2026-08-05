@@ -50,8 +50,18 @@ export default function QuizHistoryPage() {
  }
 
  getQuizHistory()
- .then((data) => setHistory(data))
- .catch((e) => console.error("Failed to load quiz history:", e))
+ .then((data) => {
+ if (data && data.grouped_history) {
+ setHistory(data);
+ } else {
+ console.error("Invalid quiz history response:", data);
+ setHistory(null);
+ }
+ })
+ .catch((e) => {
+ console.error("Failed to load quiz history:", e);
+ setHistory(null);
+ })
  .finally(() => setLoading(false));
  }, [authLoading, user, router]);
 
@@ -110,7 +120,7 @@ export default function QuizHistoryPage() {
  );
  }
 
- if (!history || history.grouped_history.length === 0) {
+ if (!history || !history.grouped_history || history.grouped_history.length === 0) {
  return (
  <div className="app-page">
  <div className="app-shell-wide">
