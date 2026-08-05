@@ -12,7 +12,7 @@ def test_groq_api():
     
     try:
         print("Testing Groq API connection directly...")
-        api_key = os.environ.get("GROQ_API_KEY", "your-api-key-here")
+        api_key = os.environ.get('GROQ_API_KEY', 'your-api-key-here')
         
         print("Creating Groq client...")
         # Try with custom httpx client that disables SSL verification
