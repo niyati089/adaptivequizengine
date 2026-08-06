@@ -3,10 +3,11 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { BookOpen, Check, Plus, Shield, Trash2, Users, X, BarChart2, Eye } from 'lucide-react';
+import { BookOpen, Check, Plus, Shield, Trash2, Users, X, BarChart2, Eye, FileText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { DancingSquares } from '@/components/shared/DancingSquares';
 import { ProctoringDashboard } from '@/components/educator/ProctoringDashboard';
+import { EducatorDocumentUpload } from '@/components/educator/EducatorDocumentUpload';
 import {
   createClassQuiz,
   createClassroom,
@@ -41,6 +42,7 @@ export default function ClassesPage() {
   const [classForm, setClassForm] = useState({ name: '', subject: '', description: '' });
   const [quizForm, setQuizForm] = useState({ title: '', topic: '', subtopic: 'General', bloom_level: 'Remembering', starting_difficulty: 0, enable_anti_cheating: false, enable_proctoring: false, max_proctoring_warnings: 3, num_questions: 10 });
   const [viewingProctoringQuizId, setViewingProctoringQuizId] = useState<number | null>(null);
+  const [showEducatorDocumentUpload, setShowEducatorDocumentUpload] = useState(false);
 
   const selectedClass = classes.find(item => item.id === selectedClassId) || classes[0];
 
@@ -85,6 +87,23 @@ export default function ClassesPage() {
     await createClassQuiz(selectedClass.id, quizForm);
     setQuizForm({ title: '', topic: '', subtopic: 'General', bloom_level: 'Remembering', starting_difficulty: 0, enable_anti_cheating: false, enable_proctoring: false, max_proctoring_warnings: 3, num_questions: 10 });
     load();
+  };
+
+  const handleDocumentQuizGenerated = (generatedQuizData: any) => {
+    // Pre-fill the quiz form with generated data
+    setQuizForm(prev => ({
+      ...prev,
+      title: generatedQuizData.title || `Quiz from ${generatedQuizData.document_name || 'PDF'}`,
+      topic: generatedQuizData.topic || 'Document-Based Topic',
+      subtopic: (generatedQuizData.subtopics && generatedQuizData.subtopics[0]) || 'General',
+    }));
+    
+    // Store the generated questions and subtopics for submission
+    // These will be submitted along with the form
+    (window as any).__generatedDocumentQuizData = generatedQuizData;
+    
+    // Close the modal
+    setShowEducatorDocumentUpload(false);
   };
 
   if (isLoading || loading || !user) {
@@ -236,7 +255,27 @@ export default function ClassesPage() {
               </div>
 
               <div className="card">
-                <h3 style={{ fontWeight: 'var(--font-black)', fontSize: 'var(--text-base)', margin: '0 0 var(--space-4)' }}>Adaptive Quizzes</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+                  <h3 style={{ fontWeight: 'var(--font-black)', fontSize: 'var(--text-base)', margin: 0 }}>Adaptive Quizzes</h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowEducatorDocumentUpload(true)}
+                    style={{
+                      border: 'none',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--info)',
+                      color: 'var(--surface)',
+                      fontWeight: 'var(--font-bold)',
+                      padding: 'var(--space-2) var(--space-4)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-2)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <FileText size={16} /> Generate from PDF
+                  </button>
+                </div>
                 <form onSubmit={handleCreateQuiz} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 0.8fr auto', gap: 'var(--space-2)' }}>
                     <input value={quizForm.title} onChange={e => setQuizForm({ ...quizForm, title: e.target.value })} placeholder="Quiz title" style={inputStyle} />
@@ -369,6 +408,15 @@ export default function ClassesPage() {
                     <ProctoringDashboard quizId={viewingProctoringQuizId} />
                   </div>
                 </div>
+              )}
+
+              {/* Document Upload Modal */}
+              {showEducatorDocumentUpload && selectedClass && (
+                <EducatorDocumentUpload
+                  classroomId={selectedClass.id}
+                  onQuizGenerated={handleDocumentQuizGenerated}
+                  onCancel={() => setShowEducatorDocumentUpload(false)}
+                />
               )}
             </main>
           )}

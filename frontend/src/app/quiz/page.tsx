@@ -13,6 +13,7 @@ import { ProctoringPreview } from "@/components/proctoring/ProctoringPreview";
 import { ProctoringWarningModal } from "@/components/proctoring/ProctoringWarningModal";
 import { Modal } from "@/components/shared/Modal";
 import { SocraticHintPanel } from "@/components/quiz/SocraticHintPanel";
+import { DocumentUpload } from "@/components/quiz/DocumentUpload";
 import { api } from "@/services/api";
 
 interface QuestionRecord {
@@ -47,6 +48,12 @@ function QuizContent() {
  const [selectedSubtopic, setSelectedSubtopic] = useState("");
  const [classQuiz, setClassQuiz] = useState<any>(null);
  const [message, setMessage] = useState<string | null>(null);
+ 
+ // Document upload mode
+ const [showDocumentUpload, setShowDocumentUpload] = useState(false);
+ const [generatedQuizFromDoc, setGeneratedQuizFromDoc] = useState<any>(null);
+ const [availableSubtopics, setAvailableSubtopics] = useState<string[]>([]);
+ const [selectedMultipleSubtopics, setSelectedMultipleSubtopics] = useState<Set<string>>(new Set());
 
  const [qIndex, setQIndex] = useState(0);
  const [q, setQ] = useState<any>(null);
@@ -206,6 +213,17 @@ function QuizContent() {
  };
 
  const startQuiz = () => {
+ // Check if document subtopics are available and selected
+ if (availableSubtopics.length > 0 && selectedMultipleSubtopics.size === 0) {
+ setMessage("Please select at least one subtopic to continue");
+ return;
+ }
+ 
+ // If multiple subtopics selected, combine them into selectedSubtopic for now
+ if (selectedMultipleSubtopics.size > 0) {
+ setSelectedSubtopic(Array.from(selectedMultipleSubtopics).join(", "));
+ }
+ 
  setQuizState("playing");
  const startingTheta = classQuiz?.starting_difficulty || 0.0;
  setTheta(startingTheta);
@@ -244,6 +262,55 @@ function QuizContent() {
  setMessage("Failed to initialize proctoring.");
  });
  }
+ };
+ 
+ const handleDocumentQuizGenerated = (quizData: any) => {
+ // Store the generated quiz data
+ setGeneratedQuizFromDoc(quizData);
+ 
+ // Extract subtopics from flat list OR convert from nested structure
+ let subtopics: string[] = [];
+ 
+ // Try flat structure first
+ if (quizData.subtopics && Array.isArray(quizData.subtopics)) {
+ quizData.subtopics.forEach((sub: any) => {
+ if (typeof sub === "string") {
+ subtopics.push(sub);
+ } else if (sub.name) {
+ subtopics.push(sub.name);
+ }
+ });
+ }
+ 
+ // Fallback to nested structure
+ if (subtopics.length === 0 && quizData.topics && Array.isArray(quizData.topics)) {
+ quizData.topics.forEach((topic: any) => {
+ if (topic.subtopics && Array.isArray(topic.subtopics)) {
+ if (typeof topic.subtopics[0] === "string") {
+ subtopics.push(...topic.subtopics);
+ } else {
+ topic.subtopics.forEach((st: any) => {
+ if (st.name) subtopics.push(st.name);
+ else if (typeof st === "string") subtopics.push(st);
+ });
+ }
+ }
+ });
+ }
+ 
+ setAvailableSubtopics(subtopics);
+ setSelectedMultipleSubtopics(new Set()); // Clear previous selections
+ 
+ // Set the topic from document title
+ setInputTopic(quizData.title || "Document Quiz");
+ setSelectedSubtopic(""); // Clear single selection
+ 
+ // Close the document upload modal
+ setShowDocumentUpload(false);
+ 
+ // Show success message
+ setMessage(`Quiz generated! Select one or more subtopics to practice (${subtopics.length} available)`);
+ setTimeout(() => setMessage(null), 4000);
  };
 
  // Fullscreen functions
@@ -1025,7 +1092,50 @@ function QuizContent() {
  </FieldLabel>
 
  <FieldLabel label="Focus Subtopic">
- {dagData?.subtopics ? (
+ {availableSubtopics.length > 0 ? (
+ <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+ <div style={{
+ maxHeight: "200px",
+ overflowY: "auto",
+ border: "1px solid var(--border)",
+ borderRadius: "var(--radius-md)",
+ padding: "var(--space-2)",
+ backgroundColor: "var(--surface)"
+ }}>
+ {availableSubtopics.map((subtopic: string, idx: number) => (
+ <label key={idx} style={{
+ display: "flex",
+ alignItems: "center",
+ gap: "var(--space-2)",
+ padding: "var(--space-2)",
+ cursor: "pointer",
+ borderRadius: "var(--radius-sm)",
+ transition: "background-color 0.2s",
+ backgroundColor: selectedMultipleSubtopics.has(subtopic) ? "var(--primary-soft)" : "transparent"
+ }}>
+ <input
+ type="checkbox"
+ checked={selectedMultipleSubtopics.has(subtopic)}
+ onChange={(e) => {
+ const newSet = new Set(selectedMultipleSubtopics);
+ if (e.target.checked) {
+ newSet.add(subtopic);
+ } else {
+ newSet.delete(subtopic);
+ }
+ setSelectedMultipleSubtopics(newSet);
+ }}
+ style={{ cursor: "pointer" }}
+ />
+ <span style={{ fontSize: "var(--text-sm)" }}>{subtopic}</span>
+ </label>
+ ))}
+ </div>
+ <small style={{ color: "var(--ink-secondary)" }}>
+ Select one or more subtopics • {selectedMultipleSubtopics.size} selected
+ </small>
+ </div>
+ ) : dagData?.subtopics ? (
  <select value={selectedSubtopic} onChange={(e) => setSelectedSubtopic(e.target.value)} style={inputStyle}>
  {dagData.subtopics.map((st: any) => (
  <option key={st.id || st.title} value={st.title}>{st.title} (Lvl {st.level})</option>
@@ -1063,10 +1173,36 @@ function QuizContent() {
  </div>
  </div>
  )}
+ {!isClassroomQuiz && (
+ <div style={{ display: "flex", gap: "var(--space-3)", marginTop: "var(--space-6)" }}>
+ <button onClick={startQuiz} disabled={!inputTopic || isLoadingDag} className="neo-btn neo-btn-primary" style={{ flex: 1, padding: "var(--space-4)", opacity: !inputTopic || isLoadingDag ? 0.55 : 1 }}>
+ Start Quiz <ChevronRight size={18} />
+ </button>
+ <button 
+ onClick={() => setShowDocumentUpload(true)} 
+ className="neo-btn neo-btn-secondary" 
+ style={{ padding: "var(--space-4)", display: "flex", alignItems: "center", gap: "var(--space-2)" }}
+ >
+ <BookOpen size={18} />
+ Generate from PDF
+ </button>
+ </div>
+ )}
+ {isClassroomQuiz && (
  <button onClick={startQuiz} disabled={!inputTopic || isLoadingDag} className="neo-btn neo-btn-primary" style={{ width: "100%", padding: "var(--space-4)", marginTop: "var(--space-6)", opacity: !inputTopic || isLoadingDag ? 0.55 : 1 }}>
  Start Quiz <ChevronRight size={18} />
  </button>
+ )}
  </section>
+ 
+ {showDocumentUpload && (
+ <Modal isOpen={showDocumentUpload} onClose={() => setShowDocumentUpload(false)}>
+ <DocumentUpload 
+ onQuizGenerated={handleDocumentQuizGenerated}
+ onCancel={() => setShowDocumentUpload(false)}
+ />
+ </Modal>
+ )}
  </div>
  </div>
  );
