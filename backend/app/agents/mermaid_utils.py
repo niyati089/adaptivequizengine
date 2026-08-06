@@ -80,14 +80,50 @@ def sanitize_mermaid(syntax: str) -> str:
     cleaned_lines = [line for line in lines if not line.strip().startswith("```")]
     syntax = "\n".join(cleaned_lines).strip()
 
-    lower_syntax = syntax.lower()
-    has_header = any(lower_syntax.startswith(header) for header in _DIAGRAM_HEADERS)
-    if not has_header:
-        syntax = "flowchart TD\n" + syntax
-
-    final_lines = []
+    # Pre-process lines: split comma-separated statements and strip trailing commas
+    raw_lines = []
     for line in syntax.split("\n"):
         line_str = line.strip()
+        if not line_str:
+            continue
+        
+        # Split on commas that are not inside quotes or node bracket shapes
+        parts = []
+        current = []
+        in_quotes = False
+        in_bracket = False
+        
+        for char in line_str:
+            if char == '"':
+                in_quotes = not in_quotes
+                current.append(char)
+            elif char in ["[", "(", "{"] and not in_quotes:
+                in_bracket = True
+                current.append(char)
+            elif char in ["]", ")", "}"] and not in_quotes:
+                in_bracket = False
+                current.append(char)
+            elif char == "," and not in_quotes and not in_bracket:
+                parts.append("".join(current).strip())
+                current = []
+            else:
+                current.append(char)
+        if current:
+            parts.append("".join(current).strip())
+        
+        for p in parts:
+            p_clean = p.rstrip(",").strip()
+            if p_clean:
+                raw_lines.append(p_clean)
+
+    lower_syntax = "\n".join(raw_lines).lower()
+    has_header = any(lower_syntax.startswith(header) for header in _DIAGRAM_HEADERS)
+    if not has_header:
+        raw_lines.insert(0, "flowchart TD")
+
+    final_lines = []
+    for line_str in raw_lines:
+        line_str = line_str.strip().rstrip(",")
         if not line_str:
             continue
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import random
 from typing import Optional
+import httpx
 
 from groq import Groq
 
@@ -115,7 +116,10 @@ Respond ONLY with valid JSON (no markdown, no backticks):
 }}"""
 
     try:
-        client = Groq(api_key=api_key)
+        client = Groq(
+            api_key=api_key,
+            http_client=httpx.Client(verify=False)
+        )
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             max_tokens=1500,

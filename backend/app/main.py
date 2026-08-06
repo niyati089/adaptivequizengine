@@ -67,6 +67,7 @@ def _run_lightweight_migrations() -> None:
         "severity": "VARCHAR(20) DEFAULT 'medium'",
         "confidence": "INTEGER",
         "is_false_positive": "BOOLEAN DEFAULT FALSE",
+        "session_token": "VARCHAR(255)",
     })
     
     # Rename columns to match model

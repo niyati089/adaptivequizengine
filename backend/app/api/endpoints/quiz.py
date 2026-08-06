@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional, List
 from groq import Groq
 import json
+import httpx
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from app.core.config import resolve_groq_api_key
@@ -15,6 +16,8 @@ from app.models.review import ReviewSchedule
 from app.misconceptions.analyzer import MisconceptionAnalyzer
 from app.agents.question_gen import generate_variant
 from app.api.endpoints.users import get_current_student, oauth2_scheme, resolve_user_id_from_token
+from app.services.document_processor import DocumentProcessor
+from app.services.document_quiz_generator import DocumentQuizGenerator
 
 router = APIRouter()
 
@@ -52,7 +55,11 @@ async def generate_question(req: QuestionRequest, db: Session = Depends(get_db))
     if not api_key:
         raise HTTPException(status_code=400, detail="API key required")
 
-    client = Groq(api_key=api_key)
+    # Create Groq client with SSL verification disabled to fix Windows certificate issues
+    client = Groq(
+        api_key=api_key,
+        http_client=httpx.Client(verify=False)
+    )
     difficulty_label = ThetaEstimator.theta_to_label(req.difficulty)
     avoid = "\n".join(f"- {q}" for q in req.previous_questions[-5:]) if req.previous_questions else "None"
 
@@ -66,6 +73,8 @@ Bloom's Taxonomy level: {req.bloom_level}
 Previously asked questions (DO NOT repeat these):
 {avoid}
 
+IMPORTANT: Vary the position of the correct answer across A, B, C, and D. Do NOT always put it in position A.
+
 Respond ONLY with valid JSON (no markdown, no backticks):
 {{
   "question": "The question text",
@@ -76,12 +85,12 @@ Respond ONLY with valid JSON (no markdown, no backticks):
     "C": "Option C text",
     "D": "Option D text"
   }},
-  "correct_answer": "A",
+  "correct_answer": "B",
   "explanation": "Why this answer is correct, and what misconception each wrong answer represents",
   "difficulty": {req.difficulty},
   "bloom_level": "{req.bloom_level}",
   "misconceptions": {{
-    "B": "What misunderstanding leads to choosing B",
+    "A": "What misunderstanding leads to choosing A",
     "C": "What misunderstanding leads to choosing C",
     "D": "What misunderstanding leads to choosing D"
   }}
@@ -185,7 +194,10 @@ async def submit_answer(
             api_key = resolve_groq_api_key(req.api_key)
             if api_key:
                 try:
-                    groq_client = Groq(api_key=api_key)
+                    groq_client = Groq(
+                        api_key=api_key,
+                        http_client=httpx.Client(verify=False)
+                    )
                 except Exception:
                     groq_client = None
 
@@ -429,3 +441,203 @@ async def get_quiz_history(
             1
         )
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Document-Based Quiz Generation Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DocumentQuizRequest(BaseModel):
+    """Request model for generating quiz from extracted document content."""
+    document_text: str
+    sections: List[dict]
+    questions_per_topic: int = 5
+    api_key: Optional[str] = None
+
+
+@router.post("/upload-document")
+async def upload_document_for_quiz(
+    file: UploadFile = File(...),
+    api_key: Optional[str] = None
+):
+    """
+    Upload a PDF document and extract its content for quiz generation.
+    
+    This endpoint:
+    1. Validates the uploaded PDF file
+    2. Extracts text content from the PDF
+    3. Detects document structure (sections, chapters)
+    4. Returns processed content ready for quiz generation
+    
+    The document itself is NOT stored - only processed in memory.
+    """
+    # Validate file type
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are supported"
+        )
+    
+    # Validate file size (10MB limit)
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
+    
+    try:
+        # Read file content
+        file_content = await file.read()
+        
+        if len(file_content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File size exceeds 10MB limit. Your file: {len(file_content) / (1024*1024):.1f}MB"
+            )
+        
+        # Process the PDF
+        processor = DocumentProcessor()
+        processed_data = processor.process_pdf_for_quiz_generation(file_content)
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "metadata": processed_data["metadata"],
+            "sections": processed_data["sections"],
+            "num_pages": processed_data["num_pages"],
+            "total_chars": processed_data["total_chars"],
+            "needs_chunking": processed_data["needs_chunking"],
+            "message": "Document processed successfully. Use /generate-from-document to create quiz."
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing document: {str(e)}"
+        )
+
+
+@router.post("/generate-from-document")
+async def generate_quiz_from_document(
+    req: DocumentQuizRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a complete adaptive quiz from processed document content.
+    
+    This endpoint:
+    1. Analyzes document content using LLM
+    2. Extracts topics and subtopics
+    3. Generates questions for each topic with varying difficulty
+    4. Returns complete quiz structure matching existing format
+    
+    The generated quiz can be saved to database using existing quiz endpoints.
+    """
+    api_key = resolve_groq_api_key(req.api_key)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key required")
+    
+    try:
+        # Initialize quiz generator
+        generator = DocumentQuizGenerator(api_key)
+        
+        # Reconstruct full text from sections
+        full_text = "\n\n".join([
+            f"{section['title']}\n{section['content']}"
+            for section in req.sections
+        ])
+        
+        # Generate complete quiz structure
+        quiz_data = generator.generate_complete_quiz(
+            document_text=full_text,
+            sections=req.sections,
+            questions_per_topic=req.questions_per_topic
+        )
+        
+        # Add metadata
+        quiz_data["generated_from_document"] = True
+        quiz_data["total_questions"] = sum(
+            len(topic["questions"]) for topic in quiz_data["topics"]
+        )
+        
+        return {
+            "success": True,
+            "quiz": quiz_data,
+            "message": "Quiz generated successfully from document"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating quiz: {str(e)}"
+        )
+
+
+@router.post("/generate-from-document-simple")
+async def generate_quiz_from_document_simple(
+    file: UploadFile = File(...),
+    questions_per_topic: int = 5,
+    api_key: Optional[str] = None
+):
+    """
+    Single-step endpoint: Upload PDF and generate quiz in one call.
+    
+    Combines document upload and quiz generation for simpler client integration.
+    This is a convenience endpoint that internally calls both processing steps.
+    """
+    # Validate file type
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are supported"
+        )
+    
+    # Validate API key
+    api_key = resolve_groq_api_key(api_key)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key required")
+    
+    # Validate file size (10MB limit)
+    MAX_FILE_SIZE = 10 * 1024 * 1024
+    
+    try:
+        # Read and process PDF
+        file_content = await file.read()
+        
+        if len(file_content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File size exceeds 10MB limit"
+            )
+        
+        # Process document
+        processor = DocumentProcessor()
+        processed_data = processor.process_pdf_for_quiz_generation(file_content)
+        
+        # Generate quiz
+        generator = DocumentQuizGenerator(api_key)
+        quiz_data = generator.generate_complete_quiz(
+            document_text=processed_data["full_text"],
+            sections=processed_data["sections"],
+            questions_per_topic=questions_per_topic
+        )
+        
+        # Add metadata
+        quiz_data["generated_from_document"] = True
+        quiz_data["source_filename"] = file.filename
+        quiz_data["document_metadata"] = processed_data["metadata"]
+        quiz_data["total_questions"] = sum(
+            len(topic["questions"]) for topic in quiz_data["topics"]
+        )
+        
+        return {
+            "success": True,
+            "quiz": quiz_data,
+            "message": f"Quiz generated successfully from {file.filename}"
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing document and generating quiz: {str(e)}"
+        )

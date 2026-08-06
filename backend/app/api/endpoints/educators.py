@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
+import httpx
 from groq import Groq
 
 from app.core.config import resolve_groq_api_key
@@ -280,7 +281,10 @@ You MUST cover:
 Format the output clearly and professionally for a classroom teacher."""
 
     try:
-        client = Groq(api_key=api_key)
+        client = Groq(
+            api_key=api_key,
+            http_client=httpx.Client(verify=False)
+        )
         message = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             max_tokens=2000,

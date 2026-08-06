@@ -14,11 +14,22 @@ class TopicDAGEngine:
     def __init__(self, api_key: str):
         self.graph = nx.DiGraph()
         self.api_key = api_key.strip() if api_key else ""
+        logger.info(f"TopicDAGEngine initialized with API key length: {len(self.api_key)}")
         
     def generate_dag_and_notes(self, topic: str) -> dict:
-        client = Groq(
-            api_key=self.api_key
-        )
+        logger.info(f"Starting DAG generation for topic: '{topic}'")
+        
+        try:
+            logger.info("Creating Groq client...")
+            # Use the same working configuration from direct test
+            import httpx
+            http_client = httpx.Client(verify=False, timeout=30.0)
+            client = Groq(api_key=self.api_key, http_client=http_client)
+            logger.info("Groq client created successfully")
+        except Exception as e:
+            logger.error(f"Failed to create Groq client: {e}")
+            raise RuntimeError(f"Failed to create Groq client: {e}")
+        
         prompt = f"""You are an expert educator. The user wants to learn about: "{topic}"
 
 Return ONLY this exact JSON structure (no markdown, no explanation, no extra keys):
@@ -49,6 +60,7 @@ Rules:
         last_error = None
         for attempt in range(3):
             try:
+                logger.info(f"Attempt {attempt + 1}: Making API call to Groq...")
                 message = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     max_tokens=1500,
@@ -56,8 +68,10 @@ Rules:
                     response_format={"type": "json_object"},
                     temperature=0.3,
                 )
+                logger.info("API call successful, processing response...")
 
                 raw = message.choices[0].message.content.strip()
+                logger.info(f"Raw response length: {len(raw)}")
 
                 # Strip markdown fences if model adds them despite instruction
                 if raw.startswith("```"):
@@ -72,7 +86,9 @@ Rules:
                 if start_idx == -1 or end_idx == -1:
                     raise ValueError("No JSON object found in LLM response")
 
+                logger.info("Parsing JSON response...")
                 data = json.loads(raw[start_idx:end_idx + 1], strict=False)
+                logger.info(f"JSON parsed successfully, keys: {list(data.keys())}")
 
                 # Validate required keys exist
                 if "subtopics" not in data or not isinstance(data["subtopics"], list):
@@ -103,7 +119,7 @@ Rules:
 
             except Exception as e:
                 last_error = e
-                logger.warning(f"DAG generation attempt {attempt + 1} failed: {e}")
+                logger.error(f"DAG generation attempt {attempt + 1} failed with error type {type(e).__name__}: {e}")
                 continue
 
         raise RuntimeError(f"Failed to generate DAG after 3 attempts: {last_error}")
